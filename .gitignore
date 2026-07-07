@@ -1,0 +1,11 @@
+build/
+*.o
+*.d
+*.safetensors
+# *.bin  — keep bpe_v6.bin (tokenizer model), just omit *.o and *.d
+data/
+checkpoints/
+sft_data/
+__pycache__/
+.DS_Store
+*.zip
