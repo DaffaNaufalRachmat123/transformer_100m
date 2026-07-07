@@ -82,6 +82,7 @@ static int    g_warmup                = 100;
 static float  g_grad_clip             = 1.0f;
 static bool   g_use_ddp               = false;
 static int    g_num_gpus              = 2;
+static bool   g_resume                = false;
 
 static volatile bool g_stop = false;
 void sig_handler(int) { g_stop = true; }
@@ -465,6 +466,7 @@ int main(int argc, char** argv) {
         else if (arg == "--warmup" && i+1 < argc)    g_warmup = std::stoi(argv[++i]);
         else if (arg == "--ddp")                     g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)  g_num_gpus = std::stoi(argv[++i]);
+        else if (arg == "--resume")                  g_resume = true;
         else if (arg == "--help") {
             printf("Usage: train_sft_cuda --stage <2|3|4> [options]\n");
             printf("  --stage 2          SFT (Supervised Fine-Tuning)\n");
@@ -479,6 +481,7 @@ int main(int argc, char** argv) {
             printf("  --max_seq          Max sequence length [512]\n");
             printf("  --grad_clip        Global grad-norm clip [1.0]\n");
             printf("  --ddp              Enable multi-GPU DDP (NCCL)\n");
+            printf("  --resume           Resume from checkpoint (weights + optim + step)\n");
             return 0;
         }
     }
@@ -561,8 +564,105 @@ int main(int argc, char** argv) {
     alloc_grads(st.grads, params);
     cuda::sync_compute();
 
-    // ─── Save checkpoint utility (FP16 safetensors) ────────────────────────
-    auto save_stage_checkpoint = [&](const std::string& suffix) {
+    // ─── Resume state (populated by --resume block below) ─────────────────
+    const char* stage_tag_early = (g_stage == 2) ? "sft" : (g_stage == 3) ? "dpo" : "phone";
+    int   start_step   = 0;
+    int   start_epoch  = 0;
+    size_t start_sample_idx = 0;
+
+    if (g_resume) {
+        std::string sp = g_checkpoint_dir + "/train_state_" + stage_tag_early + ".txt";
+        if (fs::exists(sp)) {
+            std::string last_ckpt;
+            std::ifstream sf(sp);
+            std::string line;
+            while (std::getline(sf, line)) {
+                if      (line.rfind("step=", 0)        == 0) start_step        = std::stoi(line.substr(5));
+                else if (line.rfind("epoch=", 0)       == 0) start_epoch       = std::stoi(line.substr(6));
+                else if (line.rfind("sample_idx=", 0)  == 0) start_sample_idx  = std::stoull(line.substr(11));
+                else if (line.rfind("last_ckpt=", 0)   == 0) last_ckpt         = line.substr(10);
+            }
+            sf.close();
+
+            // Reload weights from the last saved checkpoint (overrides base_model).
+            if (!last_ckpt.empty()) {
+                std::string wpath = g_checkpoint_dir + "/" + last_ckpt;
+                if (fs::exists(wpath)) {
+                    printf("[RESUME] Loading weights: %s\n", wpath.c_str());
+                    SafeTensorsLoader loader(wpath);
+                    std::vector<__half> buf(params[0].numel());
+                    loader.read_into_fp16("embed.weight", buf.data());
+                    cudaMemcpy(params[0].data, buf.data(), params[0].nbytes, cudaMemcpyHostToDevice);
+                    const char* names[] = {"wq","wk","wv","wo","w1","w2","w3","rms_attn","rms_ffn"};
+                    for (int l = 0; l < N_LAYERS; l++) {
+                        int base = 1 + l * 9;
+                        for (int n = 0; n < 9; n++) {
+                            std::string tn = "layer." + std::to_string(l) + "." + names[n] + ".weight";
+                            auto& p = params[base + n];
+                            std::vector<__half> pbuf(p.numel());
+                            loader.read_into_fp16(tn, pbuf.data());
+                            cudaMemcpy(p.data, pbuf.data(), p.nbytes, cudaMemcpyHostToDevice);
+                        }
+                    }
+                    auto& frms = params[1 + N_LAYERS * 9];
+                    std::vector<__half> fb(frms.numel());
+                    loader.read_into_fp16("final_rms.weight", fb.data());
+                    cudaMemcpy(frms.data, fb.data(), frms.nbytes, cudaMemcpyHostToDevice);
+                    // Refresh master (FP32) from reloaded FP16 weights.
+                    for (size_t i = 0; i < params.size(); i++)
+                        master_params[i] = cuda::astype(params[i], cuda::DType::F32);
+                }
+            }
+
+            // Load optimizer state (m, v FP32).
+            std::string opath = g_checkpoint_dir + "/ckpt_" + stage_tag_early + "_optim.safetensors";
+            if (fs::exists(opath)) {
+                printf("[RESUME] Loading optimizer: %s\n", opath.c_str());
+                SafeTensorsLoader ol(opath);
+                const char* layer_names[] = {"wq","wk","wv","wo","w1","w2","w3","rms_attn","rms_ffn"};
+                auto load_f32 = [&](cuda::CudaTensor& t, const std::string& name) {
+                    if (!ol.has_tensor(name)) return;
+                    std::vector<float> hbuf(t.numel());
+                    ol.read_into_f32(name, hbuf.data());
+                    cudaMemcpy(t.data, hbuf.data(), t.numel() * sizeof(float), cudaMemcpyHostToDevice);
+                };
+                load_f32(opt_m[0], "m.embed");
+                load_f32(opt_v[0], "v.embed");
+                for (int l = 0; l < N_LAYERS; l++) {
+                    int base = 1 + l * 9;
+                    for (int i = 0; i < 9; i++) {
+                        std::string pfx = "layer." + std::to_string(l) + "." + layer_names[i];
+                        load_f32(opt_m[base + i], "m." + pfx);
+                        load_f32(opt_v[base + i], "v." + pfx);
+                    }
+                }
+                int frms_idx = 1 + N_LAYERS * 9;
+                load_f32(opt_m[frms_idx], "m.final_rms");
+                load_f32(opt_v[frms_idx], "v.final_rms");
+                printf("[RESUME] Optimizer states restored (%zu tensors)\n", opt_m.size() * 2);
+            } else {
+                printf("[RESUME] No optimizer file — cold optimizer (m=0, v=0)\n");
+            }
+
+            printf("[RESUME] Restored at step=%d, epoch=%d, sample_idx=%zu\n",
+                   start_step, start_epoch, start_sample_idx);
+        } else {
+            printf("[RESUME] No train_state found for stage '%s' — starting fresh\n",
+                   stage_tag_early);
+        }
+    }
+
+    // ─── Save checkpoint utility (weights + optimizer + train_state) ──────
+    // Layout on disk:
+    //   ckpt<suffix>.safetensors     — FP16 model weights
+    //   ckpt_<tag>_optim.safetensors — FP32 optimizer m,v (single file, overwritten)
+    //   train_state_<tag>.txt        — step, epoch, sample_idx (single file, overwritten)
+    // where <tag> = sft | dpo | phone (derived from stage).
+    const char* stage_tag = (g_stage == 2) ? "sft" : (g_stage == 3) ? "dpo" : "phone";
+
+    auto save_stage_checkpoint = [&](const std::string& suffix,
+                                     int cur_step = -1, int cur_epoch = -1,
+                                     size_t cur_sample_idx = 0) {
 #ifdef USE_DDP
         if (g_use_ddp && !cuda::ddp::is_main()) return;
 #endif
@@ -606,6 +706,52 @@ int main(int argc, char** argv) {
         }
         w.finalize(path);
         printf("[CKPT] Saved FP16: %s (%.1f MB)\n", path.c_str(), (float)fs::file_size(path) / 1e6f);
+
+        // ── Save optimizer state (m, v FP32) — overwrite single file ──
+        {
+            std::string opt_path = g_checkpoint_dir + "/ckpt_" + stage_tag + "_optim.safetensors";
+            SafeTensorsWriter ow;
+            std::vector<std::vector<float>> obufs;
+            obufs.reserve(params.size() * 2);
+            const char* layer_names[] = {"wq","wk","wv","wo","w1","w2","w3","rms_attn","rms_ffn"};
+            auto save_f32 = [&](const cuda::CudaTensor& t, const std::string& name) {
+                obufs.emplace_back(t.numel());
+                auto& hbuf = obufs.back();
+                cudaMemcpy(hbuf.data(), t.data, t.numel() * sizeof(float), cudaMemcpyDeviceToHost);
+                if (t.ndim == 1)
+                    ow.add_tensor(name, STDtype::F32, {(uint32_t)t.numel()}, hbuf.data());
+                else
+                    ow.add_tensor(name, STDtype::F32,
+                                  {(uint32_t)t.shape[0], (uint32_t)t.shape[1]}, hbuf.data());
+            };
+            save_f32(opt_m[0], "m.embed");
+            save_f32(opt_v[0], "v.embed");
+            for (int l = 0; l < N_LAYERS; l++) {
+                int base = 1 + l * 9;
+                for (int i = 0; i < 9; i++) {
+                    std::string pfx = "layer." + std::to_string(l) + "." + layer_names[i];
+                    save_f32(opt_m[base + i], "m." + pfx);
+                    save_f32(opt_v[base + i], "v." + pfx);
+                }
+            }
+            int frms_idx = 1 + N_LAYERS * 9;
+            save_f32(opt_m[frms_idx], "m.final_rms");
+            save_f32(opt_v[frms_idx], "v.final_rms");
+            ow.finalize(opt_path);
+            printf("[CKPT] Optimizer: %s (%.1f MB)\n", opt_path.c_str(),
+                   (float)fs::file_size(opt_path) / 1e6f);
+        }
+
+        // ── Save train_state (step/epoch/sample_idx + last-ckpt suffix) ──
+        if (cur_step >= 0) {
+            std::string sp = g_checkpoint_dir + "/train_state_" + stage_tag + ".txt";
+            std::ofstream sf(sp);
+            sf << "step=" << cur_step << "\n";
+            sf << "epoch=" << cur_epoch << "\n";
+            sf << "sample_idx=" << cur_sample_idx << "\n";
+            sf << "last_ckpt=ckpt" << suffix << ".safetensors\n";
+            sf.close();
+        }
     };
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -624,14 +770,16 @@ int main(int argc, char** argv) {
         if (g_max_steps > 0) total_steps = std::min(total_steps, g_max_steps);
 
         auto t0 = Clock::now();
-        int step = 0;
+        int step = start_step;
         float running_loss = 0;
 
-        for (int epoch = 0; epoch < g_epochs && !g_stop; epoch++) {
+        for (int epoch = start_epoch; epoch < g_epochs && !g_stop; epoch++) {
             std::mt19937 rng(42 + epoch);
             std::shuffle(samples.begin(), samples.end(), rng);
 
-            for (size_t bi = 0; bi + g_batch_size <= samples.size() && !g_stop; bi += g_batch_size) {
+            // On the first (resumed) epoch, skip already-processed samples.
+            size_t bi_start = (epoch == start_epoch) ? start_sample_idx : 0;
+            for (size_t bi = bi_start; bi + g_batch_size <= samples.size() && !g_stop; bi += g_batch_size) {
                 if (g_max_steps > 0 && step >= g_max_steps) break;
 
                 int S = g_max_seq, B = g_batch_size;
@@ -671,10 +819,12 @@ int main(int argc, char** argv) {
                 }
                 if (step % g_save_every == 0)
                     save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone")
-                                          + "_step" + std::to_string(step));
+                                          + "_step" + std::to_string(step),
+                                          step, epoch, bi + g_batch_size);
             }
         }
-        save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone") + "_final");
+        save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone") + "_final",
+                              step, g_epochs, 0);
         printf("\n[DONE] %s complete. %d steps.\n", tag, step);
     }
 
@@ -702,7 +852,7 @@ int main(int argc, char** argv) {
         if (g_max_steps > 0) total_steps = std::min(total_steps, g_max_steps);
 
         auto t0 = Clock::now();
-        int step = 0;
+        int step = start_step;
         float running_loss = 0, running_margin = 0;
 
         // Helper: forward + logits only (no grad) for reference/log-prob use.
@@ -718,11 +868,12 @@ int main(int argc, char** argv) {
             return logits;
         };
 
-        for (int epoch = 0; epoch < g_epochs && !g_stop; epoch++) {
+        for (int epoch = start_epoch; epoch < g_epochs && !g_stop; epoch++) {
             std::mt19937 rng(42 + epoch);
             std::shuffle(dpo_samples.begin(), dpo_samples.end(), rng);
 
-            for (size_t bi = 0; bi + g_batch_size <= dpo_samples.size() && !g_stop; bi += g_batch_size) {
+            size_t bi_start = (epoch == start_epoch) ? start_sample_idx : 0;
+            for (size_t bi = bi_start; bi + g_batch_size <= dpo_samples.size() && !g_stop; bi += g_batch_size) {
                 if (g_max_steps > 0 && step >= g_max_steps) break;
                 int S = g_max_seq, B = g_batch_size;
 
@@ -829,10 +980,12 @@ int main(int argc, char** argv) {
                     }
                     running_loss = 0; running_margin = 0;
                 }
-                if (step % g_save_every == 0) save_stage_checkpoint("_dpo_step" + std::to_string(step));
+                if (step % g_save_every == 0)
+                    save_stage_checkpoint("_dpo_step" + std::to_string(step),
+                                          step, epoch, bi + g_batch_size);
             }
         }
-        save_stage_checkpoint("_dpo_final");
+        save_stage_checkpoint("_dpo_final", step, g_epochs, 0);
         printf("\n[DONE] DPO complete. %d steps.\n", step);
     }
 

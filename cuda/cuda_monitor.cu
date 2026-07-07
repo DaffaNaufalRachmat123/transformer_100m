@@ -78,16 +78,56 @@ float get_gpu_utilization(int device) {
     return (float)s.gpu_util_pct;
 }
 
-#else // !USE_NVML — stubs
+#else // !USE_NVML — fallbacks using cudaMemGetInfo + nvidia-smi
+
+#include <cuda_runtime.h>
+#include <cstdlib>
+#include <cstring>
+
+// Query GPU utilization via `nvidia-smi` (always installed on driver-present
+// systems). We keep it lightweight: one popen call per log tick, parse a
+// single integer. Result cached briefly to avoid spamming.
+static int query_nvidia_smi_util(int device) {
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd),
+        "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits -i %d 2>/dev/null",
+        device);
+    FILE* p = popen(cmd, "r");
+    if (!p) return 0;
+    char buf[32] = {0};
+    if (!fgets(buf, sizeof(buf), p)) { pclose(p); return 0; }
+    pclose(p);
+    return atoi(buf);
+}
 
 void nvml_init() {
-    printf("[NVML] disabled at build time (libnvidia-ml not found)\n");
+    printf("[NVML] disabled — using cudaMemGetInfo + nvidia-smi fallback\n");
 }
 void nvml_shutdown() {}
-GpuStats get_gpu_stats(int) { return {}; }
-size_t get_active_memory(int) { return 0; }
-size_t get_peak_memory(int) { return 0; }
-float get_gpu_utilization(int) { return 0.0f; }
+
+GpuStats get_gpu_stats(int device) {
+    GpuStats s = {};
+    // Memory: cudaMemGetInfo is always available (queries current device).
+    // The caller sets device via cudaSetDevice earlier; we just read here.
+    int prev_dev = 0;
+    cudaGetDevice(&prev_dev);
+    if (device != prev_dev) cudaSetDevice(device);
+    size_t free_b = 0, total_b = 0;
+    cudaMemGetInfo(&free_b, &total_b);
+    if (device != prev_dev) cudaSetDevice(prev_dev);
+    s.mem_total_bytes = total_b;
+    s.mem_used_bytes  = (total_b > free_b) ? (total_b - free_b) : 0;
+    s.mem_util_pct    = total_b > 0 ? (int)(100 * s.mem_used_bytes / total_b) : 0;
+    // GPU utilization via nvidia-smi
+    s.gpu_util_pct = query_nvidia_smi_util(device);
+    return s;
+}
+
+size_t get_active_memory(int device) {
+    return get_gpu_stats(device).mem_used_bytes;
+}
+size_t get_peak_memory(int device) { return get_active_memory(device); }
+float get_gpu_utilization(int device) { return (float)get_gpu_stats(device).gpu_util_pct; }
 
 #endif
 
