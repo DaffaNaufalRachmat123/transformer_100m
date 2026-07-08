@@ -6,9 +6,52 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# ─── Target GPU: NVIDIA T4 (Turing, sm_75) ─────────────────────────────────
-if(NOT CMAKE_CUDA_ARCHITECTURES)
+# ═══════════════════════════════════════════════════════════════════════════════
+# GPU TARGET SELECTION
+# Uncomment ONE line below to target your GPU, or pass -DGPU_TARGET=xxx
+# ═══════════════════════════════════════════════════════════════════════════════
+# set(GPU_TARGET "T4")         # Kaggle/Colab — NVIDIA T4 16GB (sm_75, Turing)
+# set(GPU_TARGET "V100")       # Cloud — NVIDIA V100 16/32GB (sm_70, Volta)
+# set(GPU_TARGET "A100")       # Cloud — NVIDIA A100 40/80GB (sm_80, Ampere)
+# set(GPU_TARGET "RTX3090")    # Desktop — RTX 3090 24GB (sm_86, Ampere)
+# set(GPU_TARGET "RTX4090")    # Desktop — RTX 4090 24GB (sm_89, Ada Lovelace)
+# set(GPU_TARGET "H100")       # HPC — NVIDIA H100 80GB (sm_90, Hopper)
+# set(GPU_TARGET "ALL")        # Fat binary (larger, runs on all above)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if(NOT GPU_TARGET)
+    set(GPU_TARGET "T4")  # Default: Kaggle T4
+endif()
+
+# Map GPU_TARGET to CUDA architectures
+if(GPU_TARGET STREQUAL "T4")
     set(CMAKE_CUDA_ARCHITECTURES 75)
+elseif(GPU_TARGET STREQUAL "V100")
+    set(CMAKE_CUDA_ARCHITECTURES 70)
+elseif(GPU_TARGET STREQUAL "A100")
+    set(CMAKE_CUDA_ARCHITECTURES 80)
+    add_compile_definitions(GPU_HAS_BF16=1)
+elseif(GPU_TARGET STREQUAL "RTX3090")
+    set(CMAKE_CUDA_ARCHITECTURES 86)
+    add_compile_definitions(GPU_HAS_BF16=1)
+elseif(GPU_TARGET STREQUAL "RTX4090")
+    set(CMAKE_CUDA_ARCHITECTURES 89)
+    add_compile_definitions(GPU_HAS_BF16=1)
+elseif(GPU_TARGET STREQUAL "H100")
+    set(CMAKE_CUDA_ARCHITECTURES 90)
+    add_compile_definitions(GPU_HAS_BF16=1)
+elseif(GPU_TARGET STREQUAL "ALL")
+    set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
+    add_compile_definitions(GPU_HAS_BF16=1)
+else()
+    message(FATAL_ERROR "Unknown GPU_TARGET: ${GPU_TARGET}. Use T4/V100/A100/RTX3090/RTX4090/H100/ALL")
+endif()
+
+message(STATUS "[GPU] Target: ${GPU_TARGET} → sm_${CMAKE_CUDA_ARCHITECTURES}")
+
+# Override if user passes -DCMAKE_CUDA_ARCHITECTURES directly
+if(DEFINED CACHE{CMAKE_CUDA_ARCHITECTURES})
+    message(STATUS "[GPU] User override: sm_${CMAKE_CUDA_ARCHITECTURES}")
 endif()
 
 # ─── Build type ─────────────────────────────────────────────────────────────

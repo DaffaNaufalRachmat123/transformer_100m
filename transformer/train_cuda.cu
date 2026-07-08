@@ -466,15 +466,31 @@ int main(int argc, char** argv) {
     cuda::nvml_init();
 #endif
 
-    printf("\n╔══════════════════════════════════════════════════════════╗\n");
-    printf("║  100M Transformer — CUDA Pre-training (sm_75 / T4)      ║\n");
+    printf("╔══════════════════════════════════════════════════════════╗\n");
+    printf("║  100M Transformer — CUDA Pre-training                    ║\n");
     printf("║  D=%d L=%d QH=%d KVH=%d DH=%d FFN=%d V=%d        ║\n",
            D_MODEL, N_LAYERS, N_Q_HEADS, N_KV_HEADS, D_HEAD, FFN_DIM, MODEL_VOCAB);
-    printf("║  GPU: %s | FP16 Mixed Precision | AdamW       ║\n",
-           g_use_ddp ? "T4 x2 (DDP)" : "Single T4   ");
+    printf("║  GPU: %s (sm_%d) | FP16 Mixed Precision | AdamW  ║\n",
+           cuda::ctx.gpu_caps.name, cuda::ctx.gpu_caps.sm_version);
     printf("║  Tokens: %-10s | Batch: %-3d | Seq: %-4d            ║\n",
            fmt_tok(g_max_tokens).c_str(), g_batch_size, g_max_seq);
     printf("╚══════════════════════════════════════════════════════════╝\n\n");
+
+    // ─── Auto-tune batch size based on available VRAM ──────────────────────
+    if (g_batch_size <= 8) {
+        // User didn't specify a large batch — auto-detect from VRAM
+        float vram_gb = cuda::ctx.gpu_caps.vram_bytes / (1024.0f * 1024.0f * 1024.0f);
+        int auto_batch = (int)((vram_gb - 1.5f) * 5.0f);  // ~5 samples per free GB at seq=256
+        auto_batch = std::max(4, std::min(auto_batch, 500));
+        // Scale for sequence length
+        auto_batch = auto_batch * 256 / g_max_seq;
+        auto_batch = std::max(4, auto_batch);
+        if (auto_batch > g_batch_size) {
+            printf("[AUTO] Batch size: %d → %d (detected %.1f GB VRAM)\n",
+                   g_batch_size, auto_batch, vram_gb);
+            g_batch_size = auto_batch;
+        }
+    }
 
     // ─── Load tokenizer ────────────────────────────────────────────────────
     BPEEncoder tok;

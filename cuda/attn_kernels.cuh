@@ -12,6 +12,12 @@
 // Layout:
 //   Q : [B, S, HQ, DH]   K/V : [B, S, HKV, DH]   O : [B, S, HQ, DH]
 //   GQA: hkv = hq / (HQ / HKV)
+//
+// GPU Compatibility:
+//   - Requires sm >= 30 (warp shuffle: __shfl_down_sync)
+//   - Works on: T4(sm75), V100(sm70), A100(sm80), RTX3090(sm86), RTX4090(sm89), H100(sm90)
+//   - DH constraint: DH must be ≤ 64 (each lane handles DH/32 ≤ 2 elements)
+//     For DH=128, use a 2-warp variant or tile the head dimension.
 // =============================================================================
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
