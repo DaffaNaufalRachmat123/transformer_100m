@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 12: AdamW</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+initStagePage(11,4,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    const a=S.adam;
+    if(sub===0){
+        fp.innerHTML=texBlock(`m_t=\\beta_1 m_{t-1}+(1-\\beta_1)g_t \\quad v_t=\\beta_2 v_{t-1}+(1-\\beta_2)g_t^2`);
+        let h='<div style="width:100%;text-align:center">';
+        h+=`<div class="mat-label">AdamW Update — W_Q[0][0]</div>`;
+        h+=`<div style="margin:6px 0;font-size:.78rem">θ=${fmt(a.param)} | g=${a.grad} | m_prev=${fmt(a.m_prev)} | v_prev=${fmt(a.v_prev)}</div>`;
+        h+=`<div style="padding:8px;background:var(--panel2);border-radius:4px;font-size:.72rem;max-width:500px;margin:4px auto">`;
+        h+=`<div class="comp-terms">m_t = ${CFG.b1}×${fmt(a.m_prev)} + ${1-CFG.b1}×${a.grad} = <span class="comp-result">${a.m}</span></div>`;
+        h+=`<div class="comp-terms">v_t = ${CFG.b2}×${fmt(a.v_prev)} + ${1-CFG.b2}×${a.grad}² = <span class="comp-result">${a.v}</span></div>`;
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>First moment (mean gradient) + second moment (variance)</strong></div><div class="comp-line">m melacak arah rata-rata gradient. v melacak magnitude. Keduanya exponential moving average.</div></div>`;
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`\\hat{m}_t=\\frac{m_t}{1-\\beta_1^t} \\quad \\hat{v}_t=\\frac{v_t}{1-\\beta_2^t}`);
+        let h='<div style="width:100%;text-align:center;font-size:.78rem">';
+        h+=`<div class="mat-label">Bias Correction (step t=${a.step})</div>`;
+        h+=`<div style="padding:8px;background:var(--panel2);border-radius:4px;max-width:500px;margin:6px auto">`;
+        h+=`<div class="comp-terms">m̂ = ${a.m} / (1−${CFG.b1}^${a.step}) = ${a.m} / ${+(1-Math.pow(CFG.b1,a.step)).toFixed(4)} = <span class="comp-result">${a.mHat}</span></div>`;
+        h+=`<div class="comp-terms">v̂ = ${a.v} / (1−${CFG.b2}^${a.step}) = ${a.v} / ${+(1-Math.pow(CFG.b2,a.step)).toFixed(6)} = <span class="comp-result">${a.vHat}</span></div>`;
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">Bias correction mengoreksi estimasi yang bias karena inisialisasi nol. Di step awal koreksinya besar.</div></div>';
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`\\theta_t=\\theta_{t-1}-\\text{lr}\\cdot\\frac{\\hat{m}}{\\sqrt{\\hat{v}}+\\epsilon}-\\text{lr}\\cdot\\lambda\\cdot\\theta_{t-1}`);
+        let h='<div style="width:100%;text-align:center;font-size:.78rem">';
+        h+=`<div class="mat-label">Weight Update</div>`;
+        h+=`<div style="padding:8px;background:var(--panel2);border-radius:4px;max-width:550px;margin:6px auto">`;
+        h+=`<div class="comp-terms">Adam update = ${CFG.lr} × ${a.mHat} / (√${a.vHat} + ${CFG.adam_eps}) = <span class="comp-result">${a.update}</span></div>`;
+        h+=`<div class="comp-terms">Weight decay = ${CFG.lr} × ${CFG.wd} × ${fmt(a.param)} = <span class="comp-result">${a.decay}</span></div>`;
+        h+=`<div style="margin-top:6px"><strong>θ_new = ${fmt(a.param)} − ${a.update} − ${a.decay} = <span class="comp-result" style="font-size:1rem">${fmt(a.newParam)}</span></strong></div>`;
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>AdamW = Adam + decoupled weight decay</strong></div><div class="comp-line">θ: ${fmt(a.param)} → ${fmt(a.newParam)} (Δ=${fmt(a.newParam-a.param)})</div></div>`;
+    } else {
+        fp.innerHTML=texBlock(`\\text{Training Loop: forward} \\to \\text{loss} \\to \\text{backward} \\to \\text{update}`);
+        let h='<div style="width:100%;text-align:center">';
+        h+=`<div style="font-size:1.1rem;color:var(--green);font-weight:700;margin:10px">✓ Training Step Selesai!</div>`;
+        h+=`<div style="font-size:.82rem;margin:8px">Loss = <span style="color:var(--red);font-weight:700">${fmt(S.totalLoss)}</span> | Grad Norm = ${fmt(S.gradNorm)} | W_Q[0][0]: ${fmt(a.param)} → <span style="color:var(--green)">${fmt(a.newParam)}</span></div>`;
+        h+=`<div style="padding:10px;background:var(--panel2);border-radius:6px;font-size:.68rem;text-align:left;max-width:550px;margin:8px auto">`;
+        h+=`<div style="color:var(--purple);font-weight:700;margin-bottom:4px">Pipeline Summary (Real Model: 100M params)</div>`;
+        h+=`<div>• d_model=576, n_layers=13, n_q_heads=9, n_kv_heads=3, d_head=64</div>`;
+        h+=`<div>• ffn=2304, vocab=65536, seq=2048, RoPE θ=500000</div>`;
+        h+=`<div>• Weight Tying, FP16 Training, AdamW optimizer</div>`;
+        h+=`<div>• Proses yang sama diulang 13× (13 decoder layers) per forward</div>`;
+        h+=`<div style="margin-top:4px;color:var(--cyan)">Visualisasi ini (d=32) mendemonstrasikan SEMUA operasi identik — hanya skala yang berbeda.</div>`;
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line">Satu training step = forward pass + loss + backprop + optimizer update. Ini diulang ribuan kali sampai loss konvergen.</div></div>`;
+    }
+    ex.textContent='AdamW: adaptive learning rate (Adam) + decoupled weight decay. m = mean gradient direction, v = gradient variance. Bias correction fix estimasi di awal training.';
+});
+</script></body></html>

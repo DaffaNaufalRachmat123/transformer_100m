@@ -25,6 +25,7 @@
 #include <vector>
 #include <csignal>
 #include <random>
+#include <algorithm>
 
 #include "cuda/cuda_tensor.h"
 #include "cuda/cuda_context.h"
@@ -76,6 +77,10 @@ static float g_beta2       = 0.95f;
 static float g_eps         = 1e-8f;
 static float g_wd          = 0.1f;
 static float g_grad_clip   = 1.0f;
+
+// ─── Loss scaling (prevents FP16 gradient underflow) ───────────────────────
+static float g_loss_scale  = 1.0f;   // 1.0 = no scaling; 1024 recommended for FP16
+static int   g_debug_steps = 0;      // 0 = disabled; N = dump diag every N steps
 
 // ─── Checkpoint config ─────────────────────────────────────────────────────
 static int g_save_every    = 500;
@@ -148,6 +153,113 @@ static std::string fmt_bar(double frac, int width = 20) {
     }
     b += "]";
     return b;
+}
+
+// ─── Diagnostic: compute stats of FP16 tensor on GPU ───────────────────────
+struct TensorStats {
+    float min_val, max_val, rms_val;
+    int nan_count, inf_count;
+};
+
+static TensorStats compute_stats_fp16(const cuda::CudaTensor& t) {
+    TensorStats s = {0, 0, 0, 0, 0};
+    if (!t.data || t.numel() == 0) return s;
+    int n = (int)t.numel();
+    int sample_n = std::min(n, 65536);
+    std::vector<__half> buf(sample_n);
+    cudaMemcpy(buf.data(), t.data, sample_n * sizeof(__half), cudaMemcpyDeviceToHost);
+    s.min_val = 1e30f; s.max_val = -1e30f;
+    double sq_sum = 0.0;
+    for (int i = 0; i < sample_n; i++) {
+        float v = __half2float(buf[i]);
+        if (std::isnan(v)) { s.nan_count++; continue; }
+        if (std::isinf(v)) { s.inf_count++; continue; }
+        if (v < s.min_val) s.min_val = v;
+        if (v > s.max_val) s.max_val = v;
+        sq_sum += (double)v * v;
+    }
+    int valid = sample_n - s.nan_count - s.inf_count;
+    s.rms_val = valid > 0 ? sqrtf((float)(sq_sum / valid)) : 0.0f;
+    if (valid == 0) { s.min_val = 0; s.max_val = 0; }
+    return s;
+}
+
+static float absmax_fp16(const cuda::CudaTensor& t) {
+    auto s = compute_stats_fp16(t);
+    return std::max(fabsf(s.min_val), fabsf(s.max_val));
+}
+
+// ─── Full training diagnostic dump (matches train_diag format) ─────────────
+static void dump_train_diag(FILE* f, int step, float loss, float prev_loss,
+                            float lr, float gnorm, float clip_coeff,
+                            const std::vector<cuda::CudaTensor>& params,
+                            const ts::FwdCache& cache,
+                            const ts::Grads& grads) {
+    float delta = loss - prev_loss;
+    fprintf(f, "STEP %d loss=%.6f delta=%+.4f lr=%.2e gnorm=%.4f clip=%.6f\n",
+            step, loss, delta, lr, gnorm, clip_coeff);
+
+    // FWD: forward activation stats per layer
+    fprintf(f, "FWD ");
+    {
+        auto s = compute_stats_fp16(cache.embed_out);
+        fprintf(f, "embed:%.2f/%.2f/%.4f/%d/%d ", s.min_val, s.max_val, s.rms_val, s.nan_count, s.inf_count);
+    }
+    for (int l = 0; l < (int)cache.layers.size(); l++) {
+        auto& lc = cache.layers[l];
+        auto sq = compute_stats_fp16(lc.Q);
+        auto sff = compute_stats_fp16(lc.ff);
+        fprintf(f, "L%dQ:%.2f/%.2f/%.4f/%d/%d L%dFF:%.2f/%.2f/%.4f/%d/%d ",
+                l, sq.min_val, sq.max_val, sq.rms_val, sq.nan_count, sq.inf_count,
+                l, sff.min_val, sff.max_val, sff.rms_val, sff.nan_count, sff.inf_count);
+    }
+    fprintf(f, "\n");
+
+    // GRAD: gradient stats per layer
+    fprintf(f, "GRAD ");
+    {
+        auto s = compute_stats_fp16(grads.d_embed);
+        fprintf(f, "emb:%.4e/%.4e/%.4e/%d/%d ", s.min_val, s.max_val, s.rms_val, s.nan_count, s.inf_count);
+    }
+    for (int l = 0; l < N_LAYERS; l++) {
+        auto& lg = grads.layers[l];
+        auto sq = compute_stats_fp16(lg.dwq);
+        auto s1 = compute_stats_fp16(lg.dw1);
+        auto s2 = compute_stats_fp16(lg.dw2);
+        fprintf(f, "L%ddWQ:%.4e/%.4e/%.4e/%d/%d L%ddW1:%.4e/%.4e/%.4e/%d/%d L%ddW2:%.4e/%.4e/%.4e/%d/%d ",
+                l, sq.min_val, sq.max_val, sq.rms_val, sq.nan_count, sq.inf_count,
+                l, s1.min_val, s1.max_val, s1.rms_val, s1.nan_count, s1.inf_count,
+                l, s2.min_val, s2.max_val, s2.rms_val, s2.nan_count, s2.inf_count);
+    }
+    fprintf(f, "\n");
+
+    // PARAM: first 20 parameter tensors min/max
+    fprintf(f, "PARAM ");
+    int np = std::min((int)params.size(), 20);
+    for (int i = 0; i < np; i++) {
+        auto s = compute_stats_fp16(params[i]);
+        fprintf(f, "p%d:%.4f/%.4f/%d/%d ", i, s.min_val, s.max_val, s.nan_count, s.inf_count);
+    }
+    fprintf(f, "\n---\n");
+    fflush(f);
+}
+
+// ─── Full backward diagnostic dump (matches backward_diag format) ──────────
+static void dump_backward_diag(FILE* f, int step,
+                               const cuda::CudaTensor& dx_final,
+                               const ts::Grads& grads) {
+    auto dxf = compute_stats_fp16(dx_final);
+    fprintf(f, "STEP %d dx_final:%.4e/%.4e\n",
+            step, std::max(fabsf(dxf.min_val), fabsf(dxf.max_val)), dxf.rms_val);
+    for (int l = N_LAYERS - 1; l >= 0; l--) {
+        auto& lg = grads.layers[l];
+        fprintf(f, "  L%d dQ:%.4e dK:%.4e dV:%.4e dgate:%.4e dup:%.4e dW2:%.4e dWQ:%.4e\n",
+                l, absmax_fp16(lg.dwq), absmax_fp16(lg.dwk), absmax_fp16(lg.dwv),
+                absmax_fp16(lg.dw1), absmax_fp16(lg.dw3), absmax_fp16(lg.dw2),
+                absmax_fp16(lg.dwq));
+    }
+    fprintf(f, "---\n");
+    fflush(f);
 }
 
 // ─── Phase configuration (curriculum learning) ─────────────────────────────
@@ -422,6 +534,8 @@ int main(int argc, char** argv) {
         else if (arg == "--resume")                   g_resume = true;
         else if (arg == "--ddp")                      g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)   g_num_gpus = std::stoi(argv[++i]);
+        else if (arg == "--loss_scale" && i+1 < argc) g_loss_scale = std::stof(argv[++i]);
+        else if (arg == "--debug_steps" && i+1 < argc) g_debug_steps = std::stoi(argv[++i]);
         else if (arg == "--help") {
             printf("Usage: train_pretrain_cuda [options]\n");
             printf("  --data_dir <path>         Corpus directory [data/corpus_final]\n");
@@ -437,6 +551,8 @@ int main(int argc, char** argv) {
             printf("  --resume                  Resume from checkpoint\n");
             printf("  --ddp                     Enable multi-GPU DDP (NCCL)\n");
             printf("  --num_gpus <N>            Number of GPUs for DDP [2]\n");
+            printf("  --loss_scale <float>      Static loss scale for FP16 [1.0]\n");
+            printf("  --debug_steps <N>         Dump gradient diag every N steps [0=off]\n");
             return 0;
         }
     }
@@ -665,6 +781,26 @@ int main(int argc, char** argv) {
     int warmup_steps = std::min(1000, est_total_steps / 20);
     float min_lr = g_lr * 0.1f;
 
+    // ─── Open diagnostic log files if debug mode ───────────────────────────
+    FILE* f_train_diag = nullptr;
+    FILE* f_bwd_diag = nullptr;
+    if (g_debug_steps > 0) {
+        std::string td_path = g_checkpoint_dir + "/train_diag.txt";
+        std::string bd_path = g_checkpoint_dir + "/backward_diag.txt";
+        f_train_diag = fopen(td_path.c_str(), "a");
+        f_bwd_diag   = fopen(bd_path.c_str(), "a");
+        if (f_train_diag) printf("[DIAG] train_diag → %s\n", td_path.c_str());
+        if (f_bwd_diag)   printf("[DIAG] backward_diag → %s\n", bd_path.c_str());
+    }
+    if (g_loss_scale != 1.0f)
+        printf("[SCALE] Loss scaling: %.0f (gradients computed at %gx, unscaled before optimizer)\n",
+               g_loss_scale, g_loss_scale);
+
+    // Tracking variables for diagnostics
+    float prev_loss = 11.1f;   // ln(65536) ≈ 11.09, expected random init loss
+    float last_gnorm = 0.0f;
+    float last_clip_coeff = 1.0f;
+
     // ─── Training loop ──────────────────────────────────────────────────────
     auto t_start = Clock::now();
     auto t_last_log = t_start;
@@ -776,6 +912,11 @@ int main(int argc, char** argv) {
             launch_scale_fp16((__half*)d_logits.data, 1.0f / tok_count,
                               d_logits.numel(), cuda::ctx.compute_stream);
 
+        // ─── LOSS SCALING: multiply d_logits by loss_scale for FP16 stability ──
+        if (g_loss_scale != 1.0f)
+            launch_scale_fp16((__half*)d_logits.data, g_loss_scale,
+                              d_logits.numel(), cuda::ctx.compute_stream);
+
         // ─── BACKWARD ──────────────────────────────────────────────────────
         // final rmsnorm output grad: dx_final = d_logits @ embed  → [B*S, D]
         auto dx_final = cuda::matmul(d_logits, params[0]);  // [B*S, D]
@@ -810,6 +951,25 @@ int main(int argc, char** argv) {
 #endif
 
         // ─── GRADIENT CLIPPING (global L2 norm) ────────────────────────────
+        // First: unscale gradients if loss_scale > 1
+        if (g_loss_scale != 1.0f) {
+            float inv_scale = 1.0f / g_loss_scale;
+            launch_scale_fp16((__half*)grads.d_embed.data, inv_scale, grads.d_embed.numel(), cuda::ctx.compute_stream);
+            launch_scale_fp16((__half*)grads.d_final_rms.data, inv_scale, grads.d_final_rms.numel(), cuda::ctx.compute_stream);
+            for (int l = 0; l < N_LAYERS; l++) {
+                auto& lg = grads.layers[l];
+                launch_scale_fp16((__half*)lg.dwq.data, inv_scale, lg.dwq.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dwk.data, inv_scale, lg.dwk.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dwv.data, inv_scale, lg.dwv.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dwo.data, inv_scale, lg.dwo.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dw1.data, inv_scale, lg.dw1.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dw2.data, inv_scale, lg.dw2.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dw3.data, inv_scale, lg.dw3.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.drms_attn.data, inv_scale, lg.drms_attn.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.drms_ffn.data, inv_scale, lg.drms_ffn.numel(), cuda::ctx.compute_stream);
+            }
+        }
+
         if (g_grad_clip > 0.0f) {
             float* d_norm_sq = nullptr;
             cudaMalloc(&d_norm_sq, sizeof(float));
@@ -840,8 +1000,11 @@ int main(int argc, char** argv) {
             cudaFree(d_norm_sq);
 
             float global_norm = sqrtf(h_norm_sq);
+            last_gnorm = global_norm;
+            last_clip_coeff = 1.0f;
             if (global_norm > g_grad_clip) {
                 float clip_coeff = g_grad_clip / (global_norm + 1e-6f);
+                last_clip_coeff = clip_coeff;
                 launch_scale_fp16((__half*)grads.d_embed.data, clip_coeff, grads.d_embed.numel(), cuda::ctx.compute_stream);
                 launch_scale_fp16((__half*)grads.d_final_rms.data, clip_coeff, grads.d_final_rms.numel(), cuda::ctx.compute_stream);
                 for (int l = 0; l < N_LAYERS; l++) {
@@ -858,6 +1021,21 @@ int main(int argc, char** argv) {
                 }
             }
         }
+
+        // ─── DIAGNOSTIC DUMP (after unscale + clip, before optimizer) ──────
+        bool do_diag = (g_debug_steps > 0 && (step % g_debug_steps == 0));
+        // Also dump on large loss spikes (delta > 0.5)
+        if (g_debug_steps > 0 && (loss_val - prev_loss) > 0.5f) do_diag = true;
+        if (do_diag) {
+            cuda::sync_compute();
+            if (f_train_diag)
+                dump_train_diag(f_train_diag, step, loss_val, prev_loss,
+                                lr, last_gnorm, last_clip_coeff,
+                                params, cache, grads);
+            if (f_bwd_diag)
+                dump_backward_diag(f_bwd_diag, step, dx_final, grads);
+        }
+        prev_loss = loss_val;
 
         // ─── OPTIMIZER STEP ────────────────────────────────────────────────
         cuda::adamw_step(params[0], master_params[0], adamw_m[0], adamw_v[0],
@@ -922,12 +1100,12 @@ int main(int argc, char** argv) {
             else                   snprintf(tps, sizeof(tps), "%.1fK", inst_tok_s / 1e3);
 
             printf("[S%d] step=%-7d seq=%d %s %.2f%% | tok=%s/%s | "
-                   "loss=%.4f lr=%.2e %s tok/s %.1fs/step elapsed=%s ETA %s | "
+                   "loss=%.4f lr=%.2e gn=%.3f cl=%.3f %s tok/s %.1fs/step elapsed=%s ETA %s | "
                    "RAM %.1fGB VRAM %.1fGB GPU(proc) %d%% GPU(sys) %d%%\n",
                    g_current_phase + 1, step, S,
                    fmt_bar(frac).c_str(), frac * 100.0,
                    fmt_tok2(g_tokens_processed).c_str(), fmt_tok2(g_max_tokens).c_str(),
-                   avg_loss, lr, tps, s_per_step,
+                   avg_loss, lr, last_gnorm, last_clip_coeff, tps, s_per_step,
                    fmt_dur(elapsed).c_str(), fmt_dur(eta).c_str(),
                    ram_gb, vram_gb, stats.gpu_util_pct, stats.gpu_util_pct);
 
@@ -959,6 +1137,10 @@ int main(int argc, char** argv) {
                    g_tokens_processed, step, "_final");
     printf("\n[DONE] Training complete. %s tokens in %d steps.\n",
            fmt_tok(g_tokens_processed).c_str(), step);
+
+    // Close diagnostic files
+    if (f_train_diag) fclose(f_train_diag);
+    if (f_bwd_diag)   fclose(f_bwd_diag);
 
 #ifdef USE_DDP
     if (g_use_ddp) cuda::ddp::shutdown();

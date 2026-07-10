@@ -1,0 +1,53 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 11: Backpropagation</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selTok=0;
+function pickTok(i){selTok=i;PAGE.render(PAGE.sub);}
+initStagePage(10,3,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    if(sub===0){
+        fp.innerHTML=texBlock(`\\frac{\\partial\\mathcal{L}}{\\partial z_j}=\\frac{1}{N}(\\text{softmax}(z)_j-\\mathbb{1}[j=t])`);
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        const sf=S.sfLog[selTok],tgt=TARGETS[selTok];
+        h+=`<div style="font-size:.72rem;text-align:center;margin:4px">dL/dz token ${selTok} (target=${tgt})</div>`;
+        h+=htmlVec(S.dLogits[selTok],'dl','d_logits['+selTok+']');
+        h+='</div>';vc.innerHTML=h;
+        let d='<div class="comp-step active"><div class="comp-line"><strong>dL/dz = (softmax − one_hot) / N</strong></div>';
+        for(let j=0;j<Math.min(8,CFG.V);j++){
+            const isT=j===tgt?1:0;
+            d+=`<div class="comp-line comp-terms">d[${j}]=(${(sf.probs[j]*100).toFixed(2)}%−${isT})/${CFG.seq}=${S.dLogits[selTok][j]}</div>`;
+        }
+        d+=`<div class="comp-line">... +${CFG.V-8} more (mostly ≈ softmax_j/${CFG.seq})</div></div>`;
+        cd.innerHTML=d;
+    } else if(sub===1){
+        fp.innerHTML=tex('\\text{Gradient flows backward through all layers}');
+        const layers=['Cross-Entropy','Logits (W_embed^T)','Final RMSNorm','Residual #2',
+            'SwiGLU FFN (W₁,W₂,W₃)','RMSNorm Pre-FFN','Residual #1','Output Proj (W_O)',
+            'Attention (4 heads)','RoPE','QKV Projection (W_Q,W_K,W_V)','RMSNorm Pre-Attn','Embedding'];
+        let h='<div class="grad-flow">';
+        layers.forEach((name,i)=>{h+=`<div class="grad-block" id="gb-${i}"><span style="min-width:200px;font-size:.68rem">← ${name}</span><span style="color:var(--orange);font-size:.62rem">∂L/∂x flows ←</span></div>`;});
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line">Gradient merambat mundur dari loss ke setiap layer. Chain rule: dL/dx_prev = dL/dx_next × ∂x_next/∂x_prev.</div><div class="comp-line comp-terms">‖∇‖₂ = ${fmt(S.gradNorm)}</div></div>`;
+        animGradFlow(layers.length);
+    } else {
+        fp.innerHTML=texBlock(`\\text{scale}=\\frac{\\text{clip}}{\\max(\\|\\nabla\\|_2,\\text{clip})} \\quad (\\text{clip}=1.0)`);
+        let h='<div style="width:100%;text-align:center">';
+        h+=`<div style="font-size:1rem;margin:8px">Gradient L2 Norm: <span style="color:var(--orange);font-weight:700">${fmt(S.gradNorm)}</span></div>`;
+        if(S.gradNorm>1){
+            h+=`<div style="color:var(--red);font-size:.8rem">‖∇‖₂ > 1.0 → Clipping aktif!</div>`;
+            h+=`<div style="font-size:.75rem;margin:4px">scale = 1.0 / ${fmt(S.gradNorm)} = ${fmt(S.gradScale)}</div>`;
+            h+=`<div style="font-size:.72rem">Semua ${CFG.seq}×${CFG.V} = ${CFG.seq*CFG.V} gradient values × ${fmt(S.gradScale)}</div>`;
+        } else {
+            h+=`<div style="color:var(--green);font-size:.8rem">‖∇‖₂ ≤ 1.0 → Tidak perlu clipping</div>`;
+        }
+        h+=`<div style="margin-top:10px;font-size:.68rem;color:var(--dim)">Gradient clipping = ‖g‖₂ = √(Σ gᵢ²) over ALL parameters.</div>`;
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">Gradient clipping mencegah exploding gradients. Jika norm total > threshold, semua gradient di-scale down proporsional.</div></div>';
+    }
+    ex.textContent='Backprop menghitung ∂Loss/∂param untuk setiap weight matrix. dL/d_logits = (softmax − one_hot)/N. Gradient mengalir terbalik melalui 13 transformasi.';
+});
+</script></body></html>

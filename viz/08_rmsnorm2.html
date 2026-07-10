@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 8: RMSNorm Pre-FFN</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selTok=0;
+function pickTok(i){selTok=i;PAGE.render(PAGE.sub);}
+initStagePage(7,2,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    fp.innerHTML=texBlock('\\hat{x}_{ffn}=\\text{RMSNorm}(x_{mid},\\gamma_{ffn})');
+    const det=S.norm2D[selTok];
+    if(sub===0){
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        h+=htmlVec(S.res1[selTok],'n2i','x_mid['+selTok+'] (input)');
+        h+=htmlVec(det.scaled,'n2o','ŷ['+selTok+'] (output setelah RMSNorm)');
+        h+='</div>';vc.innerHTML=h;
+        // Full RMSNorm — ALL 32 elements
+        cd.innerHTML=htmlFullRmsNorm(S.res1[selTok],W.g2,`RMSNorm Pre-FFN token ${selTok}`);
+    } else {
+        let h='<div style="width:100%">';
+        h+=htmlMat(S.norm2,'n2f','RMSNorm Pre-FFN Output [16×32]');
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">Semua 16 token dinormalisasi. Pilih token untuk lihat detail hitung semua '+CFG.d+' elemen.</div></div>';
+    }
+    ex.textContent='RMSNorm kedua — normalisasi sebelum Feed-Forward Network. Menjaga skala aktivasi konsisten untuk training stabil.';
+});
+</script></body></html>

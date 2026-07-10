@@ -1,0 +1,49 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 5: RoPE</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selPos=1;
+function pickPos(i){selPos=i;PAGE.render(PAGE.sub);}
+initStagePage(4,3,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    fp.innerHTML=texBlock(`x'_{2j}=x_{2j}\\cos\\theta-x_{2j+1}\\sin\\theta \\quad x'_{2j+1}=x_{2j}\\sin\\theta+x_{2j+1}\\cos\\theta`);
+    if(sub===0){
+        let h='<div style="width:100%"><div class="mat-label" style="text-align:center">Angle Table: θⱼ = pos / ('+CFG.rope_theta+'^(2j/d_head))</div>';
+        h+='<div style="overflow-x:auto"><table style="margin:4px auto;border-collapse:collapse;font-size:.62rem">';
+        h+='<tr><th style="padding:3px 6px;border:1px solid var(--border);color:var(--dim)">pos</th>';
+        for(let j=0;j<S.ropeAngles[0].length;j++)h+=`<th style="padding:3px 6px;border:1px solid var(--border);color:var(--dim)">θ${j} / cos / sin</th>`;
+        h+='</tr>';
+        for(let p=0;p<Math.min(8,CFG.seq);p++){
+            h+=`<tr><td style="padding:3px 6px;border:1px solid var(--border)">${p}</td>`;
+            S.ropeAngles[p].forEach(a=>{
+                h+=`<td style="padding:3px 6px;border:1px solid var(--border);font-size:.58rem"><span style="color:var(--cyan)">${a.angle.toFixed(4)}</span> / <span style="color:var(--green)">${fmt(a.cos)}</span> / <span style="color:var(--orange)">${fmt(a.sin)}</span></td>`;
+            });
+            h+='</tr>';
+        }
+        h+='</table></div></div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">RoPE: θⱼ = pos / (base^(2j/d_head)), base='+CFG.rope_theta+', d_head='+CFG.dh+', '+S.ropeAngles[0].length+' dimension pairs per head. Semua '+CFG.seq+' posisi ditampilkan.</div></div>';
+    } else if(sub===1){
+        let h='<div style="width:100%">';
+        h+='<div class="selector">';for(let p=0;p<CFG.seq;p++)h+=`<div class="sel-btn${p===selPos?' active':''}" onclick="pickPos(${p})">pos=${p}</div>`;h+='</div>';
+        const qO=S.Q[selPos],qN=S.Qr[selPos];
+        h+=htmlVec(qO,'rq-old',`Q[${selPos}] sebelum RoPE (semua ${CFG.d} dimensi)`);
+        h+=htmlVec(qN,'rq-new',`Q'[${selPos}] setelah RoPE`);
+        h+='</div>';vc.innerHTML=h;
+        // Full RoPE computation for ALL dimension pairs
+        cd.innerHTML=htmlFullRoPE(qO,selPos,CFG.dh,CFG.rope_theta,`RoPE Q[pos=${selPos}]`);
+    } else {
+        let h='<div style="width:100%"><div class="matrices-row">';
+        h+=htmlMat(S.Q,'rq-b','Q (sebelum RoPE)');h+='<div class="op-symbol">→</div>';
+        h+=htmlMat(S.Qr,'rq-a',"Q' (setelah RoPE)");
+        h+='</div><div class="matrices-row" style="margin-top:6px">';
+        h+=htmlMat(S.K,'rk-b','K (sebelum)');h+='<div class="op-symbol">→</div>';
+        h+=htmlMat(S.Kr,'rk-a',"K' (setelah RoPE)");
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">pos=0 tidak berubah (cos=1,sin=0). Posisi lebih tinggi → rotasi lebih besar. Dimensi tinggi → rotasi lebih lambat (long-range info). Pilih posisi di sub-step sebelumnya untuk lihat detail SEMUA rotation pairs.</div></div>';
+    }
+    ex.textContent='RoPE diterapkan SETELAH QKV projection. Q dan K dirotasi, V tidak. d_head='+CFG.dh+' → '+CFG.dh/2+' rotation pairs per head. Dot product Q·K secara alami mengandung informasi jarak relatif.';
+});
+</script></body></html>

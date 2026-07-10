@@ -78,10 +78,28 @@ inline bool init(int num_gpus) {
     // call. This function must be invoked BEFORE cuda::ctx.init().
     if (!init_from_env()) {
         if (num_gpus >= 2) {
-            pid_t pid = fork();
-            if (pid < 0) { fprintf(stderr, "[DDP] fork() failed\n"); return false; }
-            if (pid == 0) { s.rank = 1; s.local_rank = 1; s.world_size = num_gpus; s.is_forked = true; }
-            else          { s.rank = 0; s.local_rank = 0; s.world_size = num_gpus; s.child_pid = pid; s.is_forked = true; }
+            // Fork N-1 children for ranks 1..N-1
+            s.world_size = num_gpus;
+            s.is_forked = true;
+            s.rank = 0;
+            s.local_rank = 0;
+
+            for (int r = 1; r < num_gpus; r++) {
+                pid_t pid = fork();
+                if (pid < 0) {
+                    fprintf(stderr, "[DDP] fork() failed for rank %d\n", r);
+                    return false;
+                }
+                if (pid == 0) {
+                    // Child: I am rank r
+                    s.rank = r;
+                    s.local_rank = r;
+                    s.child_pid = -1;
+                    break;  // Children don't fork further
+                }
+                // Parent: record first child PID (for legacy compat), continue forking
+                if (r == 1) s.child_pid = pid;
+            }
         } else {
             s.rank = 0; s.local_rank = 0; s.world_size = 1;
         }
@@ -112,9 +130,11 @@ inline bool init_nccl() {
         if (s.rank == 0) {
             FILE* f = fopen(id_file, "wb");
             if (f) { fwrite(&nccl_id, sizeof(nccl_id), 1, f); fclose(f); }
-            usleep(200000);
+            // Wait enough for all children to read
+            usleep(200000 + (s.world_size - 2) * 50000);
         } else {
-            usleep(50000);
+            // Children wait for rank 0 to write the ID file
+            usleep(50000 * s.rank);  // stagger reads to reduce contention
             FILE* f = fopen(id_file, "rb");
             while (!f) { usleep(10000); f = fopen(id_file, "rb"); }
             (void)fread(&nccl_id, sizeof(nccl_id), 1, f); fclose(f);
@@ -141,14 +161,17 @@ inline void shutdown() {
     ncclCommDestroy(s.comm);
     cudaStreamDestroy(s.nccl_stream);
 
-    // If we forked, parent waits for child
-    if (s.is_forked && s.rank == 0 && s.child_pid > 0) {
-        int wstatus;
-        waitpid(s.child_pid, &wstatus, 0);
+    // If we forked, parent waits for all children
+    if (s.is_forked && s.rank == 0) {
+        // Wait for all child processes (world_size - 1 children)
+        for (int i = 0; i < s.world_size - 1; i++) {
+            int wstatus;
+            wait(&wstatus);
+        }
         unlink("/tmp/nccl_id_transformer_100m");
     }
 
-    // Child exits after shutdown
+    // Children exit after shutdown
     if (s.is_forked && s.rank != 0) {
         _exit(0);
     }

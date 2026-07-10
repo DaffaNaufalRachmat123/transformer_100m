@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="id"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NanoLLM Transformer Training Pipeline</title>
+<link rel="stylesheet" href="shared.css">
+</head><body>
+<div class="idx-header"><h1>NanoLLM Transformer Training Pipeline</h1>
+<div style="font-size:.68rem;color:var(--dim);margin:2px 0">d_model=32 | vocab=128 | seq=16 | heads=4 | kv_heads=2(GQA) | ffn=128 | RoPE θ=10000</div></div>
+<div class="pipeline" id="pipeline"></div>
+<div class="idx-controls">
+    <button id="btn-prev" onclick="navStage(-1)">◄ Prev Stage</button>
+    <span id="stage-label" style="font-size:.78rem;min-width:180px;text-align:center"></span>
+    <button id="btn-next" onclick="navStage(1)">Next Stage ►</button>
+    <div class="sep"></div>
+    <div class="speed-wrap"><span>Speed:</span><input type="range" id="speed-slider" min="1" max="10" value="5" oninput="sendSettings()"><span id="speed-label">1x</span></div>
+    <div class="sep"></div>
+    <label><input type="checkbox" id="toggle-gqa" onchange="sendSettings()" checked> GQA</label>
+    <label><input type="checkbox" id="toggle-flash" onchange="sendSettings()"> FlashAttn</label>
+</div>
+<iframe id="stage-frame" class="stage-frame" src="01_bpe.html" style="width:100%;height:calc(100vh - 140px);border:none"></iframe>
+
+<script>
+const STAGES=[
+    {name:'BPE Tokenization',short:'1.BPE',file:'01_bpe.html'},
+    {name:'Embedding Lookup',short:'2.Embed',file:'02_embedding.html'},
+    {name:'RMSNorm (Pre-Attn)',short:'3.Norm₁',file:'03_rmsnorm.html'},
+    {name:'QKV Projection',short:'4.QKV',file:'04_qkv.html'},
+    {name:'RoPE Encoding',short:'5.RoPE',file:'05_rope.html'},
+    {name:'Attention',short:'6.Attn',file:'06_attention.html'},
+    {name:'Output Proj + Residual',short:'7.Proj',file:'07_projection.html'},
+    {name:'RMSNorm (Pre-FFN)',short:'8.Norm₂',file:'08_rmsnorm2.html'},
+    {name:'SwiGLU FFN',short:'9.FFN',file:'09_swiglu.html'},
+    {name:'Cross-Entropy Loss',short:'10.Loss',file:'10_loss.html'},
+    {name:'Backpropagation',short:'11.Grad',file:'11_backprop.html'},
+    {name:'AdamW Update',short:'12.Adam',file:'12_adamw.html'}
+];
+let curStage=0;
+
+function renderPipeline(){
+    document.getElementById('pipeline').innerHTML=STAGES.map((s,i)=>
+        `<div class="pnode${i===curStage?' active':i<curStage?' done':''}" onclick="loadStage(${i})">${s.short}</div>`
+    ).join('');
+    document.getElementById('stage-label').textContent=`${curStage+1}/12: ${STAGES[curStage].name}`;
+    document.getElementById('btn-prev').disabled=curStage===0;
+    document.getElementById('btn-next').disabled=curStage===11;
+}
+
+function loadStage(idx){
+    curStage=Math.max(0,Math.min(11,idx));
+    document.getElementById('stage-frame').src=STAGES[curStage].file;
+    renderPipeline();
+}
+function navStage(dir){loadStage(curStage+dir);}
+
+function sendSettings(){
+    const sp=document.getElementById('speed-slider').value;
+    document.getElementById('speed-label').textContent=(sp/5).toFixed(1)+'x';
+    const frame=document.getElementById('stage-frame');
+    try{frame.contentWindow.postMessage({
+        type:'settings',
+        speed:parseInt(sp),
+        gqa:document.getElementById('toggle-gqa').checked,
+        flash:document.getElementById('toggle-flash').checked,
+        view:'grid'
+    },'*');}catch(e){}
+}
+
+window.addEventListener('message',function(e){
+    if(!e.data)return;
+    if(e.data.type==='stageReady'){
+        curStage=e.data.stage;renderPipeline();
+        setTimeout(sendSettings,100);
+    }
+    if(e.data.type==='requestNav'){navStage(e.data.dir);}
+});
+
+renderPipeline();
+</script>
+</body></html>

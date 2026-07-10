@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 1: BPE</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+initStagePage(0,5,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    fp.innerHTML=tex('\\text{BPE: Byte-Pair Encoding — Iterative Merge}');
+    const step=BPE_STEPS[sub]||BPE_STEPS[BPE_STEPS.length-1];
+    let h='<div style="text-align:center;width:100%">';
+    h+=`<div style="margin-bottom:8px;color:var(--dim);font-size:.72rem">Demo kata: "<span style="color:var(--blue)">${BPE_WORD}</span>"</div>`;
+    if(sub<4){
+        h+='<div style="display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin-bottom:12px">';
+        step.chars.forEach(ch=>{
+            const isM=step.merged&&ch===step.merged;
+            h+=`<div class="token-box${isM?' active':''}"><span class="tok-text">${ch}</span></div>`;
+        });
+        h+='</div>';
+        if(step.pair){
+            h+=`<div style="margin:8px 0;font-size:.75rem">Merge: <span class="merge-pair">${step.pair[0]}</span> + <span class="merge-pair">${step.pair[1]}</span> → <span style="color:var(--green);font-weight:700">${step.merged}</span> <span style="color:var(--dim)">(freq: ${step.freq})</span></div>`;
+        }
+    }
+    if(sub===4){
+        h+=`<div style="margin-bottom:8px;font-size:.72rem;color:var(--dim)">Full tokenization: "${INPUT_SENTENCES.join(' ')}"</div>`;
+        h+='<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">';
+        TOKENS_TEXT.forEach((t,i)=>{
+            h+=`<div class="token-box active"><span class="tok-text">${t}</span><span class="tok-id">ID:${TOKEN_IDS[i]}</span></div>`;
+        });
+        h+='</div>';
+        h+=`<div style="margin-top:6px;font-size:.68rem;color:var(--dim)">seq_len = ${CFG.seq} tokens (termasuk &lt;s&gt; dan &lt;/s&gt;)</div>`;
+    }
+    h+='</div>';vc.innerHTML=h;
+    const details=['Karakter awal: [q, u, i, c, k] — 5 karakter individual',
+        'Merge #1: ("q","u") freq=87 → "qu"','Merge #2: ("i","c") freq=64 → "ic"',
+        'Merge #3: ("ic","k") freq=51 → "ick"',
+        `Final: 2 kalimat → ${CFG.seq} tokens. Setiap sub-kata di-map ke integer ID via vocab lookup.`];
+    cd.innerHTML=`<div class="comp-step active"><div class="comp-line">${details[sub]||''}</div></div>`;
+    ex.textContent='BPE memecah teks menjadi sub-kata dengan menggabungkan pasangan byte paling sering secara iteratif. Vocab size = '+CFG.V+'.';
+});
+</script></body></html>
