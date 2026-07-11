@@ -1,3 +1,0 @@
-tokens_processed=9427200
-step=491
-phase=0

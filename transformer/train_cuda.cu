@@ -68,10 +68,11 @@ static int g_batch_size             = 8;   // T4 16GB fits 8 easily for 100M
 static int g_max_seq                = 256;
 static bool g_resume                = false;
 static bool g_use_ddp               = false;
-static int  g_num_gpus              = 2;
+static int  g_num_gpus              = 0;    // 0 = auto-detect
+static bool g_no_accum              = false; // disable gradient accumulation
 
 // ─── AdamW hyperparams ─────────────────────────────────────────────────────
-static float g_lr          = 3e-4f;
+static float g_lr          = 1.5e-4f;
 static float g_beta1       = 0.9f;
 static float g_beta2       = 0.95f;
 static float g_eps         = 1e-8f;
@@ -536,6 +537,7 @@ int main(int argc, char** argv) {
         else if (arg == "--num_gpus" && i+1 < argc)   g_num_gpus = std::stoi(argv[++i]);
         else if (arg == "--loss_scale" && i+1 < argc) g_loss_scale = std::stof(argv[++i]);
         else if (arg == "--debug_steps" && i+1 < argc) g_debug_steps = std::stoi(argv[++i]);
+        else if (arg == "--no_accum")                 g_no_accum = true;
         else if (arg == "--help") {
             printf("Usage: train_pretrain_cuda [options]\n");
             printf("  --data_dir <path>         Corpus directory [data/corpus_final]\n");
@@ -550,9 +552,10 @@ int main(int argc, char** argv) {
             printf("  --log_every <N>           Log every N steps [10]\n");
             printf("  --resume                  Resume from checkpoint\n");
             printf("  --ddp                     Enable multi-GPU DDP (NCCL)\n");
-            printf("  --num_gpus <N>            Number of GPUs for DDP [2]\n");
+            printf("  --num_gpus <N>            Number of GPUs for DDP [auto-detect]\n");
             printf("  --loss_scale <float>      Static loss scale for FP16 [1.0]\n");
             printf("  --debug_steps <N>         Dump gradient diag every N steps [0=off]\n");
+            printf("  --no_accum                Disable gradient accumulation\n");
             return 0;
         }
     }
@@ -563,6 +566,13 @@ int main(int argc, char** argv) {
 #ifdef USE_DDP
     int ddp_device = 0;
     if (g_use_ddp) {
+        // Auto-detect GPU count before fork (safe: cudaGetDeviceCount doesn't
+        // create a CUDA context on most drivers, just queries the driver API)
+        if (g_num_gpus == 0) {
+            int dev_count = 0;
+            cudaGetDeviceCount(&dev_count);
+            g_num_gpus = std::max(2, dev_count);  // DDP needs ≥2
+        }
         if (!cuda::ddp::init(g_num_gpus)) {   // fork only, no CUDA yet
             fprintf(stderr, "[ERR] DDP fork failed\n");
             return 1;
@@ -582,6 +592,25 @@ int main(int argc, char** argv) {
     cuda::nvml_init();
 #endif
 
+    // ─── Auto-detect GPU count ───────────────────────────────────────────
+    if (g_num_gpus == 0) {
+        int dev_count = 0;
+        cudaGetDeviceCount(&dev_count);
+        g_num_gpus = std::max(1, dev_count);
+    }
+    int world_size = 1;
+#ifdef USE_DDP
+    if (g_use_ddp) world_size = g_num_gpus;
+#endif
+
+    // ─── Auto-scale LR and warmup based on effective batch ─────────────────
+    // Reference: Kaggle 2×T4, batch=75/GPU, effective=150, lr=3e-4
+    const int REFERENCE_BATCH = 150;
+    int effective_batch = g_batch_size * world_size;
+    float lr_scale = sqrtf((float)effective_batch / (float)REFERENCE_BATCH);
+    float base_lr = g_lr;  // save user-specified lr
+    g_lr = g_lr * lr_scale;
+
     printf("╔══════════════════════════════════════════════════════════╗\n");
     printf("║  100M Transformer — CUDA Pre-training                    ║\n");
     printf("║  D=%d L=%d QH=%d KVH=%d DH=%d FFN=%d V=%d        ║\n",
@@ -590,7 +619,9 @@ int main(int argc, char** argv) {
            cuda::ctx.gpu_caps.name, cuda::ctx.gpu_caps.sm_version);
     printf("║  Tokens: %-10s | Batch: %-3d | Seq: %-4d            ║\n",
            fmt_tok(g_max_tokens).c_str(), g_batch_size, g_max_seq);
-    printf("╚══════════════════════════════════════════════════════════╝\n\n");
+    printf("╚══════════════════════════════════════════════════════════╝\n");
+    printf("[AUTO] GPUs: %d | Effective batch: %d | LR: %.2e (base %.2e × %.3f)\n",
+           world_size, effective_batch, g_lr, base_lr, lr_scale);
 
     // ─── Auto-tune batch size based on available VRAM ──────────────────────
     if (g_batch_size <= 8) {
@@ -777,9 +808,21 @@ int main(int argc, char** argv) {
 
     // ─── Estimate total steps for LR schedule ──────────────────────────────
     const int cli_batch_size = g_batch_size;  // remember original for VRAM auto-scaling
-    int est_total_steps = (int)(g_max_tokens / (g_batch_size * g_max_seq));
-    int warmup_steps = std::min(1000, est_total_steps / 20);
+    int est_total_steps = (int)(g_max_tokens / ((uint64_t)g_batch_size * g_max_seq * world_size));
+    int base_warmup = std::min(300, est_total_steps / 20);
+    int warmup_steps = (int)(base_warmup / lr_scale);  // scale warmup inversely
+    warmup_steps = std::max(100, warmup_steps);        // minimum 100 steps
     float min_lr = g_lr * 0.1f;
+
+    // ─── Gradient accumulation for single GPU ──────────────────────────────
+    int accum_steps = 1;
+    if (!g_no_accum && effective_batch < REFERENCE_BATCH) {
+        accum_steps = (REFERENCE_BATCH + effective_batch - 1) / effective_batch;
+        printf("[AUTO] Gradient accumulation: %d micro-steps (effective batch %d → %d)\n",
+               accum_steps, effective_batch, effective_batch * accum_steps);
+    }
+    printf("[AUTO] Warmup: %d steps | Total est: %d steps | Min LR: %.2e\n",
+           warmup_steps, est_total_steps, min_lr);
 
     // ─── Open diagnostic log files if debug mode ───────────────────────────
     FILE* f_train_diag = nullptr;
@@ -907,17 +950,26 @@ int main(int argc, char** argv) {
         running_loss += loss_val;
         running_count++;
 
+        // ─── SPIKE DETECTION: skip optimizer on catastrophic loss ───────────
+        bool skip_this_step = false;
+        if (step > 10 && loss_val > prev_loss * 1.5f && loss_val > 8.0f) {
+            printf("[SKIP] step=%d loss=%.4f (prev=%.4f, ratio=%.2f) — skipping optimizer\n",
+                   step, loss_val, prev_loss, loss_val / prev_loss);
+            skip_this_step = true;
+        }
+
         // Scale d_logits by 1/tok_count (mean loss gradient)
-        if (tok_count > 0)
-            launch_scale_fp16((__half*)d_logits.data, 1.0f / tok_count,
+        if (!skip_this_step && tok_count > 0)
+            launch_scale_fp16((__half*)d_logits.data, 1.0f / (tok_count * accum_steps),
                               d_logits.numel(), cuda::ctx.compute_stream);
 
         // ─── LOSS SCALING: multiply d_logits by loss_scale for FP16 stability ──
-        if (g_loss_scale != 1.0f)
+        if (!skip_this_step && g_loss_scale != 1.0f)
             launch_scale_fp16((__half*)d_logits.data, g_loss_scale,
                               d_logits.numel(), cuda::ctx.compute_stream);
 
         // ─── BACKWARD ──────────────────────────────────────────────────────
+        if (!skip_this_step) {
         // final rmsnorm output grad: dx_final = d_logits @ embed  → [B*S, D]
         auto dx_final = cuda::matmul(d_logits, params[0]);  // [B*S, D]
 
@@ -1035,9 +1087,9 @@ int main(int argc, char** argv) {
             if (f_bwd_diag)
                 dump_backward_diag(f_bwd_diag, step, dx_final, grads);
         }
-        prev_loss = loss_val;
 
-        // ─── OPTIMIZER STEP ────────────────────────────────────────────────
+        // ─── OPTIMIZER STEP (only on accumulation boundary) ────────────────
+        if (step % accum_steps == 0) {
         cuda::adamw_step(params[0], master_params[0], adamw_m[0], adamw_v[0],
                          grads.d_embed, lr, g_beta1, g_beta2, g_eps, g_wd, step + 1);
 
@@ -1059,14 +1111,13 @@ int main(int argc, char** argv) {
         cuda::adamw_step(params[frms_idx], master_params[frms_idx],
                          adamw_m[frms_idx], adamw_v[frms_idx],
                          grads.d_final_rms, lr, g_beta1, g_beta2, g_eps, 0.0f, step + 1);
+        } // end accum boundary
+
+        } // end if (!skip_this_step)
+        prev_loss = loss_val;
 
         // ─── UPDATE COUNTERS ──────────────────────────────────────────────
-        // DDP: each GPU processes B samples, total = B * world_size
-        int effective_world = 1;
-#ifdef USE_DDP
-        if (g_use_ddp) effective_world = g_num_gpus;
-#endif
-        g_tokens_processed += (uint64_t)(B * S * effective_world);
+        g_tokens_processed += (uint64_t)(B * S * world_size);
         step++;
 
         // ─── LOGGING ─────────────────────────────────────────────────────

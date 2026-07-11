@@ -130,6 +130,10 @@ static inline CudaTensor forward(
         CudaTensor ff_2d = view_as(lc.ff, {(int64_t)B*S, FFN});
         auto down = cuda::matmul(ff_2d, params[base+5]);      // [B*S, D]
 
+        // Clamp FFN output to prevent activation explosion in upper layers
+        // down max is ~3.6×ff_rms; at ff_rms=4.4 (pre-divergence), max≈16 triggers
+        launch_clamp_fp16((__half*)down.data, 16.0f, down.numel(), cuda::ctx.compute_stream);
+
         // x = x_mid + down
         elementwise_add_fp16((__half*)x_mid.data,(__half*)down.data,(__half*)x.data,x.numel(),cuda::ctx.compute_stream);
     }
@@ -215,12 +219,12 @@ static inline void backward(
         elementwise_add_fp16((__half*)d_xmid.data,(__half*)d_xmid_from_norm.data,
                              (__half*)d_xmid.data, d_xmid.numel(), cuda::ctx.compute_stream);
 
-        // now d_xmid is grad wrt x_mid.  x_mid = x + o → d_x = d_xmid, d_o = d_xmid
-        CudaTensor& d_o = d_xmid; // [B*S,D]
+        // now d_xmid is grad wrt x_mid.
+        // x_mid = x + o → d_x = d_xmid, d_o = d_xmid
 
-        // o = attn @ Wo → dWo = attn^T @ d_o ; d_attn = d_o @ Wo^T
-        lg.dwo = cuda::matmul(lc.attn, d_o, true, false);          // [D, D]
-        auto d_attn = cuda::matmul(d_o, params[base+3], false, true); // [B*S, D]
+        // o = attn @ Wo → dWo = attn^T @ d_xmid ; d_attn = d_xmid @ Wo^T
+        lg.dwo = cuda::matmul(lc.attn, d_xmid, true, false);          // [D, D]
+        auto d_attn = cuda::matmul(d_xmid, params[base+3], false, true); // [B*S, D]
         CudaTensor d_attn4 = view_as(d_attn, {B,S,HQ,DH});
 
         // attention backward → dQ,dK,dV (FP32 scratch)
@@ -268,9 +272,9 @@ static inline void backward(
         cuda::rms_norm_backward(dn1_3, params[base+7], lc.rsqrt_a, lc.normed_a,
                                 d_x_from_norm, lg.drms_attn, 1e-6f);
 
-        // d_x = d_o(=d_xmid as residual) + d_x_from_norm
+        // d_x = d_xmid + d_x_from_norm (full gradient flow, no scaling)
         CudaTensor d_x_next({(int64_t)B*S,D}, DType::FP16);
-        elementwise_add_fp16((__half*)d_o.data,(__half*)d_x_from_norm.data,
+        elementwise_add_fp16((__half*)d_xmid.data,(__half*)d_x_from_norm.data,
                              (__half*)d_x_next.data, d_x_next.numel(), cuda::ctx.compute_stream);
 
         // set dx for next (lower) layer
