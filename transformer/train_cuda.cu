@@ -76,6 +76,7 @@ static float g_beta2       = 0.95f;
 static float g_eps         = 1e-8f;
 static float g_wd          = 0.1f;
 static float g_grad_clip   = 1.0f;
+static float g_loss_scale  = 1.0f;   // FP16 loss scaling (e.g. 1024)
 
 // ─── Checkpoint config ─────────────────────────────────────────────────────
 static int g_save_every    = 500;
@@ -419,6 +420,7 @@ int main(int argc, char** argv) {
         else if (arg == "--lr" && i+1 < argc)         g_lr = std::stof(argv[++i]);
         else if (arg == "--save_every" && i+1 < argc) g_save_every = std::stoi(argv[++i]);
         else if (arg == "--log_every" && i+1 < argc)  g_log_every = std::stoi(argv[++i]);
+        else if (arg == "--loss_scale" && i+1 < argc) g_loss_scale = std::stof(argv[++i]);
         else if (arg == "--resume")                   g_resume = true;
         else if (arg == "--ddp")                      g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)   g_num_gpus = std::stoi(argv[++i]);
@@ -755,9 +757,9 @@ int main(int argc, char** argv) {
         running_loss += loss_val;
         running_count++;
 
-        // Scale d_logits by 1/tok_count (mean loss gradient)
+        // Scale d_logits by (loss_scale / tok_count) to amplify gradients in FP16
         if (tok_count > 0)
-            launch_scale_fp16((__half*)d_logits.data, 1.0f / tok_count,
+            launch_scale_fp16((__half*)d_logits.data, g_loss_scale / tok_count,
                               d_logits.numel(), cuda::ctx.compute_stream);
 
         // ─── BACKWARD ──────────────────────────────────────────────────────
@@ -792,6 +794,25 @@ int main(int argc, char** argv) {
                 if (gp && gp->data && gp->numel() > 0) cuda::ddp::average_grad(*gp);
         }
 #endif
+
+        // ─── UN-SCALE gradients (divide by loss_scale) ───────────────────────
+        if (g_loss_scale != 1.0f) {
+            float inv_scale = 1.0f / g_loss_scale;
+            launch_scale_fp16((__half*)grads.d_embed.data, inv_scale, grads.d_embed.numel(), cuda::ctx.compute_stream);
+            launch_scale_fp16((__half*)grads.d_final_rms.data, inv_scale, grads.d_final_rms.numel(), cuda::ctx.compute_stream);
+            for (int l = 0; l < N_LAYERS; l++) {
+                auto& lg = grads.layers[l];
+                launch_scale_fp16((__half*)lg.dwq.data, inv_scale, lg.dwq.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dwk.data, inv_scale, lg.dwk.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dwv.data, inv_scale, lg.dwv.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dwo.data, inv_scale, lg.dwo.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dw1.data, inv_scale, lg.dw1.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dw2.data, inv_scale, lg.dw2.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.dw3.data, inv_scale, lg.dw3.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.drms_attn.data, inv_scale, lg.drms_attn.numel(), cuda::ctx.compute_stream);
+                launch_scale_fp16((__half*)lg.drms_ffn.data, inv_scale, lg.drms_ffn.numel(), cuda::ctx.compute_stream);
+            }
+        }
 
         // ─── GRADIENT CLIPPING (global L2 norm) ────────────────────────────
         if (g_grad_clip > 0.0f) {
