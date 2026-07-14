@@ -25,6 +25,7 @@
 #include <vector>
 #include <csignal>
 #include <random>
+#include <algorithm>
 
 #include "cuda/cuda_tensor.h"
 #include "cuda/cuda_context.h"
@@ -67,7 +68,7 @@ static int g_batch_size             = 8;   // T4 16GB fits 8 easily for 100M
 static int g_max_seq                = 256;
 static bool g_resume                = false;
 static bool g_use_ddp               = false;
-static int  g_num_gpus              = 2;
+static int  g_num_gpus              = 0;    // 0 = auto-detect
 
 // ─── AdamW hyperparams ─────────────────────────────────────────────────────
 static float g_lr          = 3e-4f;
@@ -85,6 +86,7 @@ static bool g_overwrite_ckpt = true;  // Kaggle mode: single ckpt overwritten
 static int g_upload_every  = 0;      // 0 = disabled; N = upload ckpt to GDrive every N steps
 static int g_upload_prep_ahead = 20; // prepare zip N steps before upload_every
 static std::string g_upload_script = ""; // path to upload script
+static int g_debug_steps   = 0;      // 0 = disabled; N = dump diag every N steps
 
 // ─── Global state ──────────────────────────────────────────────────────────
 static volatile bool g_stop_requested = false;
@@ -429,6 +431,7 @@ int main(int argc, char** argv) {
         else if (arg == "--upload_every" && i+1 < argc) g_upload_every = std::stoi(argv[++i]);
         else if (arg == "--upload_prep_ahead" && i+1 < argc) g_upload_prep_ahead = std::stoi(argv[++i]);
         else if (arg == "--upload_script" && i+1 < argc) g_upload_script = argv[++i];
+        else if (arg == "--debug_steps" && i+1 < argc) g_debug_steps = std::stoi(argv[++i]);
         else if (arg == "--resume")                   g_resume = true;
         else if (arg == "--ddp")                      g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)   g_num_gpus = std::stoi(argv[++i]);
@@ -452,12 +455,25 @@ int main(int argc, char** argv) {
     }
 
     // ─── Init CUDA ─────────────────────────────────────────────────────────
+    // Auto-detect GPU count if not specified
+    if (g_use_ddp && g_num_gpus == 0) {
+        cudaGetDeviceCount(&g_num_gpus);
+        if (g_num_gpus < 2) {
+            printf("[DDP] Only %d GPU detected — disabling DDP, running single GPU\n", g_num_gpus);
+            g_use_ddp = false;
+            g_num_gpus = 1;
+        } else {
+            printf("[DDP] Auto-detected %d GPUs\n", g_num_gpus);
+        }
+    }
+    if (!g_use_ddp) g_num_gpus = 1;
+
     // For DDP we MUST fork BEFORE any CUDA call (CUDA context does not survive
     // fork). So: fork first -> ctx.init(local device) -> create NCCL comm.
 #ifdef USE_DDP
     int ddp_device = 0;
     if (g_use_ddp) {
-        if (!cuda::ddp::init(g_num_gpus)) {   // fork only, no CUDA yet
+        if (!cuda::ddp::init(g_num_gpus)) {
             fprintf(stderr, "[ERR] DDP fork failed\n");
             return 1;
         }
@@ -466,7 +482,7 @@ int main(int argc, char** argv) {
     cuda::ctx.init(ddp_device);
     cuda::nvml_init();
     if (g_use_ddp) {
-        if (!cuda::ddp::init_nccl()) {         // NCCL comm after CUDA init
+        if (!cuda::ddp::init_nccl()) {
             fprintf(stderr, "[ERR] NCCL init failed\n");
             return 1;
         }
@@ -667,6 +683,7 @@ int main(int argc, char** argv) {
     int step_at_last_log = step;
     float running_loss = 0.0f;
     int running_count = 0;
+    float prev_loss = 11.1f;   // ln(65536) ≈ 11.09, expected random init loss
 
     // ─── Persistent gradient buffers (allocated once, reused every step) ────
     ts::ModelDims dims;
@@ -805,12 +822,22 @@ int main(int argc, char** argv) {
         running_loss += loss_val;
         running_count++;
 
+        // ─── SPIKE DETECTION: skip optimizer on catastrophic loss ───────────
+        bool skip_this_step = false;
+        if (step > 10 && loss_val > prev_loss * 1.5f && loss_val > 8.0f) {
+            printf("[SKIP] step=%d loss=%.4f (prev=%.4f, ratio=%.2f) — skipping optimizer\n",
+                   step, loss_val, prev_loss, loss_val / prev_loss);
+            skip_this_step = true;
+        }
+        prev_loss = loss_val;
+
         // Scale d_logits by (loss_scale / tok_count) to amplify gradients in FP16
-        if (tok_count > 0)
+        if (!skip_this_step && tok_count > 0)
             launch_scale_fp16((__half*)d_logits.data, g_loss_scale / tok_count,
                               d_logits.numel(), cuda::ctx.compute_stream);
 
         // ─── BACKWARD ──────────────────────────────────────────────────────
+        if (!skip_this_step) {
         // final rmsnorm output grad: dx_final = d_logits @ embed  → [B*S, D]
         auto dx_final = cuda::matmul(d_logits, params[0]);  // [B*S, D]
 
@@ -934,6 +961,8 @@ int main(int argc, char** argv) {
         cuda::adamw_step(params[frms_idx], master_params[frms_idx],
                          adamw_m[frms_idx], adamw_v[frms_idx],
                          grads.d_final_rms, lr, g_beta1, g_beta2, g_eps, 0.0f, step + 1);
+
+        } // end if (!skip_this_step)
 
         // ─── UPDATE COUNTERS ──────────────────────────────────────────────
         // DDP: each GPU processes B samples, total = B * world_size

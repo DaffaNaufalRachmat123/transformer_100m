@@ -96,6 +96,23 @@ static inline void launch_scale_fp16(__half* d, float s, size_t n, cudaStream_t 
     scale_inplace_fp16_kernel<<<grid, block, 0, stream>>>(d, s, n);
 }
 
+// ─── Clamp fp16 buffer in place to [-max_val, +max_val] ─────────────────────
+// Available as utility; not used in default forward pass.
+__global__ void clamp_inplace_fp16_kernel(__half* d, float max_val, size_t n) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float v = __half2float(d[i]);
+        v = fminf(fmaxf(v, -max_val), max_val);
+        d[i] = __float2half(v);
+    }
+}
+
+static inline void launch_clamp_fp16(__half* d, float max_val, size_t n, cudaStream_t stream) {
+    int block = 256;
+    int grid = (int)((n + block - 1) / block);
+    clamp_inplace_fp16_kernel<<<grid, block, 0, stream>>>(d, max_val, n);
+}
+
 // ─── Embedding backward (scatter-add into FP32 accumulator) ─────────────────
 // d_x   : [BS, D] FP16 gradient w.r.t. embedded output
 // ids   : [BS] int token ids

@@ -16,9 +16,19 @@ mkdir -p build && cd build
 
 # Detect if DDP should be enabled
 DDP_FLAG=""
-if [ "${USE_DDP:-0}" = "1" ]; then
+GPU_COUNT=$(nvidia-smi -L 2>/dev/null | wc -l)
+if [ "${USE_DDP:-auto}" = "auto" ]; then
+    if [ "$GPU_COUNT" -ge 2 ] 2>/dev/null; then
+        DDP_FLAG="-DUSE_DDP=ON"
+        echo "[DDP] Multi-GPU detected ($GPU_COUNT GPUs) — DDP enabled"
+    else
+        echo "[GPU] Single GPU detected — DDP disabled"
+    fi
+elif [ "${USE_DDP}" = "1" ]; then
     DDP_FLAG="-DUSE_DDP=ON"
-    echo "[DDP] Multi-GPU enabled"
+    echo "[DDP] Multi-GPU enabled (forced)"
+else
+    echo "[GPU] DDP disabled (USE_DDP=0)"
 fi
 
 cmake .. \
