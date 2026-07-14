@@ -9,3 +9,6 @@ sft_data/
 __pycache__/
 .DS_Store
 *.zip
+suberes-414115-*.json
+gdrive_token.json
+client_secret_*.json

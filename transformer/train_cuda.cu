@@ -82,6 +82,9 @@ static float g_loss_scale  = 1.0f;   // FP16 loss scaling (e.g. 1024)
 static int g_save_every    = 500;
 static int g_log_every     = 10;
 static bool g_overwrite_ckpt = true;  // Kaggle mode: single ckpt overwritten
+static int g_upload_every  = 0;      // 0 = disabled; N = upload ckpt to GDrive every N steps
+static int g_upload_prep_ahead = 20; // prepare zip N steps before upload_every
+static std::string g_upload_script = ""; // path to upload script
 
 // ─── Global state ──────────────────────────────────────────────────────────
 static volatile bool g_stop_requested = false;
@@ -159,15 +162,17 @@ struct PhaseConfig {
 
 static std::vector<PhaseConfig> compute_phases(uint64_t total_tokens) {
     std::vector<PhaseConfig> phases;
-    uint64_t full_9b = 9'000'000'000ULL;
-    uint64_t p1 = total_tokens * 2'200'000'000ULL / full_9b;
-    uint64_t p2 = total_tokens * 3'200'000'000ULL / full_9b;
-    uint64_t p3 = total_tokens * 1'000'000'000ULL / full_9b;
-    uint64_t p4 = total_tokens - p1 - p2 - p3;
+    // Plan B: 3 phases only (no seq=2048), optimized for translation use case
+    // Phase 1: seq=256  ~35% of budget (basic token learning)
+    // Phase 2: seq=512  ~40% of budget (paragraph coherence)
+    // Phase 3: seq=1024 ~25% of budget (long context, multiturn)
+    uint64_t p1 = total_tokens * 35 / 100;
+    uint64_t p2 = total_tokens * 40 / 100;
+    uint64_t p3 = total_tokens - p1 - p2;
 
-    int seqs[] = {256, 512, 1024, 2048};
-    uint64_t toks[] = {p1, p2, p3, p4};
-    for (int i = 0; i < 4; i++) {
+    int seqs[] = {256, 512, 1024};
+    uint64_t toks[] = {p1, p2, p3};
+    for (int i = 0; i < 3; i++) {
         if (toks[i] >= 1536)
             phases.push_back({seqs[i], toks[i]});
     }
@@ -421,6 +426,9 @@ int main(int argc, char** argv) {
         else if (arg == "--save_every" && i+1 < argc) g_save_every = std::stoi(argv[++i]);
         else if (arg == "--log_every" && i+1 < argc)  g_log_every = std::stoi(argv[++i]);
         else if (arg == "--loss_scale" && i+1 < argc) g_loss_scale = std::stof(argv[++i]);
+        else if (arg == "--upload_every" && i+1 < argc) g_upload_every = std::stoi(argv[++i]);
+        else if (arg == "--upload_prep_ahead" && i+1 < argc) g_upload_prep_ahead = std::stoi(argv[++i]);
+        else if (arg == "--upload_script" && i+1 < argc) g_upload_script = argv[++i];
         else if (arg == "--resume")                   g_resume = true;
         else if (arg == "--ddp")                      g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)   g_num_gpus = std::stoi(argv[++i]);
@@ -691,13 +699,26 @@ int main(int argc, char** argv) {
         int cur_seq = (int)get_seq_len_for_tokens(g_tokens_processed, phases);
         if (cur_seq != g_max_seq) {
             g_max_seq = cur_seq;
-            // ─── Auto-adjust batch size to fit VRAM ────────────────────────
-            // Target: keep B*S ≈ constant (≈ cli_batch_size * 256 tokens per GPU)
-            // Calibrated from: B=70, S=256 uses 13.3GB / 14.6GB available
-            int base_bs_product = cli_batch_size * 256;  // CLI batch_size is for seq=256
-            g_batch_size = std::max(1, base_bs_product / g_max_seq);
-            printf("[PHASE] Switching to seq_len=%d batch=%d at %s tokens\n",
-                   g_max_seq, g_batch_size, fmt_tok(g_tokens_processed).c_str());
+            // ─── Auto-adjust batch size to fit VRAM (conservative for T4) ──
+            // Use lookup table with ~15% safety margin instead of formula
+            if      (g_max_seq <= 256)  g_batch_size = cli_batch_size;
+            else if (g_max_seq <= 512)  g_batch_size = std::max(1, (int)(cli_batch_size * 256 / g_max_seq * 0.85f));
+            else if (g_max_seq <= 1024) g_batch_size = std::max(1, (int)(cli_batch_size * 256 / g_max_seq * 0.85f));
+            else                        g_batch_size = std::max(1, (int)(cli_batch_size * 256 / g_max_seq * 0.85f));
+
+            // Update dims for forward/backward pass
+            dims.B = g_batch_size;
+            dims.S = g_max_seq;
+
+            // Update dataset to pack sequences with new seq_len
+            dataset.set_seq_len((uint32_t)g_max_seq);
+
+            // Advance phase counter for logging
+            g_current_phase++;
+
+            printf("[PHASE] Switching to seq_len=%d batch=%d at %s tokens (phase %d)\n",
+                   g_max_seq, g_batch_size, fmt_tok(g_tokens_processed).c_str(),
+                   g_current_phase + 1);
         }
 
         int B = g_batch_size, S = g_max_seq;
@@ -729,10 +750,37 @@ int main(int argc, char** argv) {
         float lr = cosine_lr(step, warmup_steps, g_lr, min_lr, est_total_steps);
 
         // ─── FORWARD PASS (correct GQA attention + stored activations) ─────
-        dims.S = S;
+        dims.B = B; dims.S = S;
         ts::FwdCache cache;
         cuda::CudaTensor x_final = ts::forward(params, d_tokens, dims,
                                                rope.cos_dev, rope.sin_dev, cache);
+
+        // ─── OOM CHECK: detect CUDA out-of-memory before it corrupts state ───
+        {
+            cudaError_t err = cudaGetLastError();
+            if (err == cudaErrorMemoryAllocation || err == cudaErrorLaunchFailure) {
+                printf("\n[OOM] CUDA out-of-memory at step=%d seq=%d batch=%d!\n", step, S, B);
+                printf("[OOM] Skipping checkpoint save to protect existing checkpoint.\n");
+                printf("[OOM] Uploading last good checkpoint to Google Drive...\n");
+                // Trigger emergency upload (sync, not async)
+                std::string script = g_upload_script.empty()
+                    ? "python3 scripts/upload_gdrive.py"
+                    : g_upload_script;
+                std::string cmd = script
+                    + " --ckpt_dir " + g_checkpoint_dir
+                    + " --step " + std::to_string(step)
+                    + " --tokens " + std::to_string(g_tokens_processed)
+                    + " --zip";
+                printf("[OOM] Running: %s\n", cmd.c_str());
+                system(cmd.c_str());
+                printf("[OOM] Exiting to prevent further damage.\n");
+#ifdef USE_DDP
+                if (g_use_ddp) cuda::ddp::shutdown();
+#endif
+                cuda::nvml_shutdown();
+                return 2;  // exit code 2 = OOM
+            }
+        }
         // x_final: [B*S, D] view into cache.x_final (owned by cache)
 
         // Logits (weight tying: x_final @ embed.T) → [B*S, V]
@@ -953,6 +1001,27 @@ int main(int argc, char** argv) {
 #endif
             save_checkpoint(g_checkpoint_dir, params, adamw_m, adamw_v,
                            g_tokens_processed, step);
+
+            // ─── UPLOAD TO GOOGLE DRIVE (simple: snapshot+compress+upload) ──
+            if (g_upload_every > 0 && step % g_upload_every == 0) {
+#ifdef USE_DDP
+                if (!g_use_ddp || cuda::ddp::is_main()) {
+#endif
+                std::string script = g_upload_script.empty()
+                    ? "python3 scripts/upload_gdrive.py"
+                    : g_upload_script;
+                std::string cmd = script
+                    + " --ckpt_dir " + g_checkpoint_dir
+                    + " --step " + std::to_string(step)
+                    + " --tokens " + std::to_string(g_tokens_processed)
+                    + " --zip"
+                    + " &";  // async — ~70s total, won't block training
+                printf("[UPLOAD] Triggering upload (step=%d)...\n", step);
+                system(cmd.c_str());
+#ifdef USE_DDP
+                }
+#endif
+            }
         }
     }
 

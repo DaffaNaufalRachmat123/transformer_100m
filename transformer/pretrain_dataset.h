@@ -190,6 +190,23 @@ public:
         rebuild_distribution();
     }
 
+    // Set seq_len directly (for phase transitions driven by training loop).
+    // Clears stale shards that were packed with the old seq_len.
+    void set_seq_len(uint32_t new_seq) {
+        if (new_seq == cfg_.seq_len) return;
+        cfg_.seq_len = new_seq;
+        active_shards_.clear();
+        leftover_shard_.reset();
+        leftover_pos_ = 0;
+        // Advance stage_idx_ to match, if possible
+        for (uint32_t i = 0; i < cfg_.curriculum.size(); i++) {
+            if (cfg_.curriculum[i].seq_len == new_seq) { stage_idx_ = i; break; }
+        }
+        update_lang_weights();
+        rebuild_distribution();
+        printf("[Dataset] seq_len updated to %u (stage %u)\n", new_seq, stage_idx_);
+    }
+
     // Print corpus summary
     void print_info(std::ostream& os = std::cout) const;
 
