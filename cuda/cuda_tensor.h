@@ -7,6 +7,8 @@
 // free functions in cuda_ops.h, mirroring MLX's functional API style.
 //
 // Memory model: RAII — owns its device allocation unless moved.
+// Allocations use CudaArena pool when active (O(1), no driver call).
+// Fallback to cudaMalloc when pool is full or not initialized.
 // Copy is disabled (use cuda::copy() explicitly).
 // =============================================================================
 
@@ -17,6 +19,7 @@
 #include <vector>
 #include <initializer_list>
 #include <utility>
+#include "cuda_allocator.h"
 
 namespace cuda {
 
@@ -62,21 +65,35 @@ public:
     size_t  nbytes = 0;
     DType   dtype = DType::F32;
     bool    owns  = true;
+    bool    from_pool = false;  // true = arena alloc, don't cudaFree
+
+    // ─── Internal alloc helper ─────────────────────────────────────────────
+    void alloc_data(size_t bytes) {
+        nbytes = bytes;
+        // Try arena first (O(1), no driver call)
+        if (arena.active_) {
+            void* p = arena.alloc(bytes);
+            if (p) { data = p; from_pool = true; return; }
+        }
+        // Fallback to cudaMalloc
+        cudaMalloc(&data, bytes);
+        from_pool = false;
+    }
 
     // ─── Constructors ──────────────────────────────────────────────────────
     CudaTensor() = default;
 
     explicit CudaTensor(float scalar) {
-        cudaMalloc(&data, sizeof(float));
+        alloc_data(sizeof(float));
         float h = scalar;
         cudaMemcpy(data, &h, sizeof(float), cudaMemcpyHostToDevice);
-        ndim = 0; shape[0] = 1; nbytes = sizeof(float); dtype = DType::F32; owns = true;
+        ndim = 0; shape[0] = 1; dtype = DType::F32; owns = true;
     }
 
     explicit CudaTensor(int scalar) {
-        cudaMalloc(&data, sizeof(int));
+        alloc_data(sizeof(int));
         cudaMemcpy(data, &scalar, sizeof(int), cudaMemcpyHostToDevice);
-        ndim = 0; shape[0] = 1; nbytes = sizeof(int); dtype = DType::I32; owns = true;
+        ndim = 0; shape[0] = 1; dtype = DType::I32; owns = true;
     }
 
     CudaTensor(std::initializer_list<int64_t> dims, DType dt)
@@ -86,8 +103,7 @@ public:
         int i = 0;
         for (auto d : dims) { shape[i++] = d; total *= d; }
         for (; i < 4; i++) shape[i] = 1;
-        nbytes = total * dtype_size(dt);
-        cudaMalloc(&data, nbytes);
+        alloc_data(total * dtype_size(dt));
     }
 
     CudaTensor(const std::vector<int64_t>& dims, DType dt)
@@ -98,8 +114,7 @@ public:
             shape[i] = dims[i]; total *= dims[i];
         }
         for (int i = ndim; i < 4; i++) shape[i] = 1;
-        nbytes = total * dtype_size(dt);
-        cudaMalloc(&data, nbytes);
+        alloc_data(total * dtype_size(dt));
     }
 
     template<typename T>
@@ -112,19 +127,19 @@ public:
     // ─── Move semantics ────────────────────────────────────────────────────
     CudaTensor(CudaTensor&& other) noexcept
         : data(other.data), ndim(other.ndim), nbytes(other.nbytes),
-          dtype(other.dtype), owns(other.owns)
+          dtype(other.dtype), owns(other.owns), from_pool(other.from_pool)
     {
         for (int i = 0; i < 4; i++) { shape[i] = other.shape[i]; stride[i] = other.stride[i]; }
-        other.data = nullptr; other.owns = false; other.nbytes = 0;
+        other.data = nullptr; other.owns = false; other.nbytes = 0; other.from_pool = false;
     }
 
     CudaTensor& operator=(CudaTensor&& other) noexcept {
         if (this != &other) {
-            if (owns && data) cudaFree(data);
+            if (owns && data && !from_pool) cudaFree(data);
             data = other.data; ndim = other.ndim; nbytes = other.nbytes;
-            dtype = other.dtype; owns = other.owns;
+            dtype = other.dtype; owns = other.owns; from_pool = other.from_pool;
             for (int i = 0; i < 4; i++) { shape[i] = other.shape[i]; stride[i] = other.stride[i]; }
-            other.data = nullptr; other.owns = false; other.nbytes = 0;
+            other.data = nullptr; other.owns = false; other.nbytes = 0; other.from_pool = false;
         }
         return *this;
     }
@@ -133,7 +148,7 @@ public:
     CudaTensor& operator=(const CudaTensor&) = delete;
 
     ~CudaTensor() {
-        if (owns && data) cudaFree(data);
+        if (owns && data && !from_pool) cudaFree(data);
     }
 
     // ─── Metadata helpers ─────────────────────────────────────────────────
@@ -178,8 +193,8 @@ public:
     void fill_zero(cudaStream_t stream = 0);
 
     void release() {
-        if (owns && data) { cudaFree(data); data = nullptr; }
-        owns = false; nbytes = 0;
+        if (owns && data && !from_pool) { cudaFree(data); data = nullptr; }
+        owns = false; nbytes = 0; from_pool = false;
     }
 
     // ─── Type deduction ────────────────────────────────────────────────────

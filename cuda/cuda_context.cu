@@ -1,10 +1,12 @@
 #include "cuda_context.h"
+#include "cuda_allocator.h"
 #include <cstdio>
 #include <cstdlib>
 
 namespace cuda {
 
 CudaContext ctx;
+CudaArena arena;
 
 void CudaContext::init(int device) {
     if (initialized) return;

@@ -71,12 +71,23 @@ static bool g_use_ddp               = false;
 static int  g_num_gpus              = 0;    // 0 = auto-detect
 
 // ─── AdamW hyperparams ─────────────────────────────────────────────────────
-static float g_lr          = 3e-4f;
+// LR lowered from 3e-4 -> 2e-4 -> 1.5e-4: at seq_len=512+ the model showed
+// sustained slow-creep drift (EMA rising monotonically once LR hits its
+// cosine-scheduled plateau) across 2 independent resume sessions from
+// tokens ~724M. The cumulative nature of the drift (many small steps in a
+// consistent wrong direction, detectable only over 30+ steps) indicates
+// the LR is simply too high for this region of the data at this context
+// length, not a single-batch spike event. The auto-decay mechanism below
+// (Fix 3) provides an additional safety net for any remaining drift.
+static float g_lr          = 1.5e-4f;
 static float g_beta1       = 0.9f;
 static float g_beta2       = 0.95f;
 static float g_eps         = 1e-8f;
 static float g_wd          = 0.1f;
-static float g_grad_clip   = 1.0f;
+// Tightened from 1.0 -> 0.5: FP16 gradients clip too loosely at 1.0,
+// letting occasional bad batches (e.g. corrupted-tokenization tails from
+// long JA/KO lines) push large updates through before being caught.
+static float g_grad_clip   = 0.5f;
 static float g_loss_scale  = 1.0f;   // FP16 loss scaling (e.g. 1024)
 
 // ─── Checkpoint config ─────────────────────────────────────────────────────
@@ -206,6 +217,7 @@ void save_checkpoint(const std::string& dir,
                      const std::vector<cuda::CudaTensor>& optimizer_m,
                      const std::vector<cuda::CudaTensor>& optimizer_v,
                      uint64_t tokens_done, int step,
+                     float ema_loss_val, float ema_local_min_val, float lr_decay_val,
                      const std::string& suffix = "") {
     fs::create_directories(dir);
 
@@ -261,6 +273,9 @@ void save_checkpoint(const std::string& dir,
     sf << "tokens_processed=" << tokens_done << "\n";
     sf << "step=" << step << "\n";
     sf << "phase=" << g_current_phase << "\n";
+    sf << "ema_loss=" << ema_loss_val << "\n";
+    sf << "ema_local_min=" << ema_local_min_val << "\n";
+    sf << "lr_decay_factor=" << lr_decay_val << "\n";
     sf.close();
 
     // ─── Save optimizer states (FP32: m, v, master) ────────────────────────
@@ -540,6 +555,29 @@ int main(int argc, char** argv) {
         adamw_v.push_back(cuda::zeros_like(cuda::CudaTensor(p.shape_vec(), cuda::DType::F32)));
     }
 
+    // ─── Spike-detection / auto-decay / cooldown state ─────────────────────
+    // Declared before the resume block because train_state.txt parsing
+    // (inside the resume block below) needs read/write access to these.
+    float ema_loss = 11.1f;         // ln(65536) ≈ 11.09, expected random init
+    bool  ema_initialized = false;
+    static constexpr float kEmaBeta = 0.95f;
+    float last_grad_norm = 0.0f;
+
+    float ema_local_min = 11.1f;    // running local minimum of EMA
+    float lr_decay_factor = 1.0f;   // LR multiplier (1.0 = no decay)
+    static constexpr float kAutoDecayThreshold  = 0.08f;
+    static constexpr float kAutoDecayFactor     = 0.7f;
+    static constexpr float kMinLrDecayFactor    = 0.2f;
+    static constexpr int   kAutoDecayCheckEvery  = 20;
+    static constexpr float kRecoveryTolerance   = 0.02f;
+    static constexpr int   kRecoveryStableSteps  = 100;
+    int steps_since_last_decay_trigger = 0;
+    bool last_decay_was_recovery = false;
+
+    static constexpr int kPhaseWarmupSteps = 200;
+    static constexpr float kPhaseCooldownFloor = 0.3f;
+    int phase_switch_step = 0;    // set after resume block
+
     // ─── Resume checkpoint ─────────────────────────────────────────────────
     int start_step = 0;
     if (g_resume) {
@@ -630,14 +668,33 @@ int main(int argc, char** argv) {
                         start_step = std::stoi(line.substr(5));
                     else if (line.find("phase=") == 0)
                         g_current_phase = std::stoi(line.substr(6));
+                    else if (line.find("lr_decay_factor=") == 0)
+                        lr_decay_factor = std::stof(line.substr(16));
+                    else if (line.find("ema_local_min=") == 0)
+                        ema_local_min = std::stof(line.substr(14));
+                    else if (line.find("ema_loss=") == 0) {
+                        ema_loss = std::stof(line.substr(9));
+                        ema_initialized = true;
+                    }
                 }
             }
+            // Force one warmup ramp at resume: the cooldown ramp scales LR
+            // down to ~30% and linearly climbs back over kPhaseWarmupSteps
+            // steps. This is deliberate — the model may have drifted since
+            // the checkpoint was saved (e.g. if the optimizer state is from
+            // a slightly different data pipeline), and easing back in is
+            // safer than a cold jump to the full cosine-scheduled LR.
+            phase_switch_step = start_step;
             printf("[RESUME] Restored at step=%d, tokens=%s\n",
                    start_step, fmt_tok(g_tokens_processed).c_str());
         } else {
             printf("[RESUME] No checkpoint found — starting fresh\n");
         }
     }
+    // For fresh start: sentinel far in the past so the cooldown ramp never
+    // spuriously triggers early in phase 1. For resume it's already set
+    // inside the if (g_resume) block above.
+    if (!g_resume) phase_switch_step = start_step - 1'000'000;
 
     // ─── Pre-compute RoPE tables ────────────────────────────────────────────
     RoPETables rope;
@@ -683,7 +740,6 @@ int main(int argc, char** argv) {
     int step_at_last_log = step;
     float running_loss = 0.0f;
     int running_count = 0;
-    float prev_loss = 11.1f;   // ln(65536) ≈ 11.09, expected random init loss
 
     // ─── Persistent gradient buffers (allocated once, reused every step) ────
     ts::ModelDims dims;
@@ -711,7 +767,18 @@ int main(int argc, char** argv) {
     }
     cuda::sync_compute();
 
+    // ─── Init CUDA memory pool (arena allocator) ────────────────────────────
+    // All persistent allocations (params, optimizer, grads) are done above.
+    // The arena handles all transient allocations in forward/backward (O(1) each).
+    cuda::arena.init_auto(0.75f);  // 75% of remaining free VRAM
+
+    // Pre-allocate gradient clipping scalar (avoid per-step cudaMalloc)
+    float* d_norm_sq = nullptr;
+    cudaMalloc(&d_norm_sq, sizeof(float));
+
     while (g_tokens_processed < g_max_tokens && !g_stop_requested) {
+        // ─── Reset arena pool (reclaim all transient memory from last step) ─
+        cuda::arena.reset();
         // Update seq_len based on curriculum phase
         int cur_seq = (int)get_seq_len_for_tokens(g_tokens_processed, phases);
         if (cur_seq != g_max_seq) {
@@ -732,6 +799,15 @@ int main(int argc, char** argv) {
 
             // Advance phase counter for logging
             g_current_phase++;
+
+            // Mark this step so the LR schedule below applies a short
+            // cooldown+re-warmup ramp instead of jumping straight back to
+            // the full cosine-scheduled LR (see kPhaseWarmupSteps below).
+            // Only trigger for genuine mid-run phase transitions, not the
+            // seq_len resync that happens on the very first iteration after
+            // a resume (that is handled explicitly in the resume block).
+            if (step > start_step)
+                phase_switch_step = step;
 
             printf("[PHASE] Switching to seq_len=%d batch=%d at %s tokens (phase %d)\n",
                    g_max_seq, g_batch_size, fmt_tok(g_tokens_processed).c_str(),
@@ -765,6 +841,27 @@ int main(int argc, char** argv) {
 
         // ─── LR schedule ───────────────────────────────────────────────────
         float lr = cosine_lr(step, warmup_steps, g_lr, min_lr, est_total_steps);
+        // Phase-transition cooldown: for kPhaseWarmupSteps steps after a
+        // curriculum seq_len switch, scale the LR down to kPhaseCooldownFloor
+        // and linearly ramp back up to 1.0x. This gives the optimizer time
+        // to adapt to the new sequence length / gradient noise profile
+        // instead of taking full-sized steps immediately, which is what
+        // triggered the earlier divergence at the 256->512 boundary.
+        {
+            int steps_since_switch = step - phase_switch_step;
+            if (steps_since_switch >= 0 && steps_since_switch < kPhaseWarmupSteps) {
+                float ramp = kPhaseCooldownFloor +
+                             (1.0f - kPhaseCooldownFloor) *
+                             ((float)steps_since_switch / (float)kPhaseWarmupSteps);
+                lr *= ramp;
+            }
+        }
+        // Auto-decay/recovery multiplier: lr_decay_factor drifts below 1.0
+        // when a slow-creep EMA rise is detected, and back toward 1.0 when
+        // the EMA proves stable over an extended window (see block after
+        // the spike-detector above). Applied *after* the phase-cooldown ramp
+        // so the two mechanisms compose cleanly.
+        lr *= lr_decay_factor;
 
         // ─── FORWARD PASS (correct GQA attention + stored activations) ─────
         dims.B = B; dims.S = S;
@@ -823,13 +920,75 @@ int main(int argc, char** argv) {
         running_count++;
 
         // ─── SPIKE DETECTION: skip optimizer on catastrophic loss ───────────
+        // Compare against a slow-moving EMA baseline instead of the raw
+        // previous step's loss. The old check (loss > prev*1.5 && loss > 8.0)
+        // almost never fired in practice for this model: normal loss sits in
+        // the 3.5-4.7 range, so an 8.0 absolute floor meant real divergence
+        // (e.g. 3.85 -> 4.6, a +19% sustained regression) went completely
+        // undetected. Thresholds below are tuned to this model's loss scale.
         bool skip_this_step = false;
-        if (step > 10 && loss_val > prev_loss * 1.5f && loss_val > 8.0f) {
-            printf("[SKIP] step=%d loss=%.4f (prev=%.4f, ratio=%.2f) — skipping optimizer\n",
-                   step, loss_val, prev_loss, loss_val / prev_loss);
+        if (!ema_initialized) {
+            ema_loss = loss_val;
+            ema_initialized = true;
+        } else if (step > 10 && loss_val > ema_loss * 1.4f && loss_val > 5.5f) {
+            printf("[SKIP] step=%d loss=%.4f (ema=%.4f, ratio=%.2f) — skipping optimizer\n",
+                   step, loss_val, ema_loss, loss_val / ema_loss);
             skip_this_step = true;
         }
-        prev_loss = loss_val;
+        // Fold the loss into the EMA baseline. Normal steps use the fast
+        // beta so the baseline tracks real progress. Detected spikes use a
+        // much slower beta (trickle) so a single bad batch doesn't drag the
+        // baseline up, but a *sustained* regime shift (e.g. genuinely harder
+        // data at a new curriculum phase) still eventually gets absorbed
+        // instead of skipping every step forever.
+        if (!skip_this_step)
+            ema_loss = kEmaBeta * ema_loss + (1.0f - kEmaBeta) * loss_val;
+        else
+            ema_loss = 0.999f * ema_loss + 0.001f * loss_val;
+
+        // ─── AUTO-DECAY/RECOVERY: drift-based LR gating ─────────────────────
+        // The spike-detector above only catches instantaneous jumps. Slow
+        // drift (EMA rising ~1-2% per logging interval, sustained for 50+
+        // steps) sneaks past it because the baseline itself drifts up with
+        // the trend. This block samples EMA periodically and gates the LR
+        // via a multiplicative factor that decays when drift is detected
+        // and slowly recovers when the EMA proves stable.
+        //
+        // Design trade-off: single-ratchet decay (no bounce-back without
+        // observation) + slow 1-level-at-a-time recovery after a proven
+        // stable window. This caps the downside while letting the model
+        // return to full LR when it can handle it.
+        {
+            ema_local_min = std::min(ema_local_min, ema_loss);
+            if (!skip_this_step)
+                steps_since_last_decay_trigger++;
+
+            if (step % kAutoDecayCheckEvery == 0) {
+                if (ema_loss > ema_local_min * (1.0f + kAutoDecayThreshold)) {
+                    lr_decay_factor = std::max(kMinLrDecayFactor,
+                                               lr_decay_factor * kAutoDecayFactor);
+                    printf("[AUTO-DECAY] EMA drift +%.1f%% | local-min=%.4f ema=%.4f "
+                           "-> lr_decay_factor=%.2f\n",
+                           100.0f * (ema_loss / ema_local_min - 1.0f),
+                           ema_local_min, ema_loss, lr_decay_factor);
+                    ema_local_min = ema_loss;
+                    steps_since_last_decay_trigger = 0;
+                    last_decay_was_recovery = false;
+                } else if (lr_decay_factor < 1.0f &&
+                           steps_since_last_decay_trigger >= kRecoveryStableSteps &&
+                           ema_loss <= ema_local_min * (1.0f + kRecoveryTolerance)) {
+                    lr_decay_factor = std::min(1.0f,
+                                               lr_decay_factor / kAutoDecayFactor);
+                    printf("[AUTO-RECOVER] EMA stable for %d steps (%.4f <= %.4f) "
+                           "-> lr_decay_factor=%.2f\n",
+                           steps_since_last_decay_trigger, ema_loss,
+                           ema_local_min * (1.0f + kRecoveryTolerance),
+                           lr_decay_factor);
+                    steps_since_last_decay_trigger = 0;
+                    last_decay_was_recovery = true;
+                }
+            }
+        }
 
         // Scale d_logits by (loss_scale / tok_count) to amplify gradients in FP16
         if (!skip_this_step && tok_count > 0)
@@ -891,8 +1050,6 @@ int main(int argc, char** argv) {
 
         // ─── GRADIENT CLIPPING (global L2 norm) ────────────────────────────
         if (g_grad_clip > 0.0f) {
-            float* d_norm_sq = nullptr;
-            cudaMalloc(&d_norm_sq, sizeof(float));
             cudaMemsetAsync(d_norm_sq, 0, sizeof(float), cuda::ctx.compute_stream);
 
             // Accumulate squared norms of all gradient tensors
@@ -917,9 +1074,9 @@ int main(int argc, char** argv) {
             cuda::sync_compute();
             float h_norm_sq = 0.0f;
             cudaMemcpy(&h_norm_sq, d_norm_sq, sizeof(float), cudaMemcpyDeviceToHost);
-            cudaFree(d_norm_sq);
 
             float global_norm = sqrtf(h_norm_sq);
+            last_grad_norm = global_norm;  // for logging
             if (global_norm > g_grad_clip) {
                 float clip_coeff = g_grad_clip / (global_norm + 1e-6f);
                 launch_scale_fp16((__half*)grads.d_embed.data, clip_coeff, grads.d_embed.numel(), cuda::ctx.compute_stream);
@@ -1004,12 +1161,12 @@ int main(int argc, char** argv) {
             else                   snprintf(tps, sizeof(tps), "%.1fK", inst_tok_s / 1e3);
 
             printf("[S%d] step=%-7d seq=%d %s %.2f%% | tok=%s/%s | "
-                   "loss=%.4f lr=%.2e %s tok/s %.1fs/step elapsed=%s ETA %s | "
+                   "loss=%.4f ema=%.4f gnorm=%.2f decay=%.2f lr=%.2e %s tok/s %.1fs/step elapsed=%s ETA %s | "
                    "RAM %.1fGB VRAM %.1fGB GPU(proc) %d%% GPU(sys) %d%%\n",
                    g_current_phase + 1, step, S,
                    fmt_bar(frac).c_str(), frac * 100.0,
                    fmt_tok2(g_tokens_processed).c_str(), fmt_tok2(g_max_tokens).c_str(),
-                   avg_loss, lr, tps, s_per_step,
+                   avg_loss, ema_loss, last_grad_norm, lr_decay_factor, lr, tps, s_per_step,
                    fmt_dur(elapsed).c_str(), fmt_dur(eta).c_str(),
                    ram_gb, vram_gb, stats.gpu_util_pct, stats.gpu_util_pct);
 
@@ -1029,7 +1186,8 @@ int main(int argc, char** argv) {
             if (!g_use_ddp || cuda::ddp::is_main())
 #endif
             save_checkpoint(g_checkpoint_dir, params, adamw_m, adamw_v,
-                           g_tokens_processed, step);
+                           g_tokens_processed, step,
+                           ema_loss, ema_local_min, lr_decay_factor);
 
             // ─── UPLOAD TO GOOGLE DRIVE (simple: snapshot+compress+upload) ──
             if (g_upload_every > 0 && step % g_upload_every == 0) {
@@ -1059,10 +1217,13 @@ int main(int argc, char** argv) {
     if (!g_use_ddp || cuda::ddp::is_main())
 #endif
     save_checkpoint(g_checkpoint_dir, params, adamw_m, adamw_v,
-                   g_tokens_processed, step, "_final");
+                   g_tokens_processed, step,
+                   ema_loss, ema_local_min, lr_decay_factor, "_final");
     printf("\n[DONE] Training complete. %s tokens in %d steps.\n",
            fmt_tok(g_tokens_processed).c_str(), step);
+    cuda::arena.print_stats();
 
+    cudaFree(d_norm_sq);
 #ifdef USE_DDP
     if (g_use_ddp) cuda::ddp::shutdown();
 #endif

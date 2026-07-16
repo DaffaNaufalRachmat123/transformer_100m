@@ -288,11 +288,32 @@ std::shared_ptr<Shard> PretrainDataset::load_shard() {
     uint64_t n_lines = 0;
     while (shard->n_samples < target_samples && std::getline(f, line)) {
         if (line.empty()) continue;
-        // Limit to 1024 chars to prevent BPE O(n²) blow-up on pathological
+        // Limit to 1024 bytes to prevent BPE O(n²) blow-up on pathological
         // lines with no whitespace (e.g. base64 data, minified code, math).
         // corpus_final has lines up to 100K+ chars; 1024 is safe and still
         // captures complete sentences for most natural-language content.
-        if (line.size() > 1024) line.resize(1024);
+        //
+        // IMPORTANT: this is a byte-level cut, so for multi-byte UTF-8
+        // languages (JA/KO especially — avg line length 5-8KB, so the
+        // vast majority of their lines get truncated here) a naive
+        // resize() can slice a multi-byte codepoint in half, leaving a
+        // dangling continuation byte (0x80-0xBF) at the tail. The BPE
+        // encoder then falls back to a rare/unnatural byte-level token
+        // for that garbage tail right before the next document's BOS —
+        // and this corruption rate roughly doubles per training sample
+        // whenever the packer concatenates more documents per sequence
+        // (i.e. every time seq_len doubles in the curriculum). Trim back
+        // to the last valid UTF-8 codepoint boundary instead.
+        if (line.size() > 1024) {
+            size_t cut = 1024;
+            // Walk backwards while we're sitting on a UTF-8 continuation
+            // byte (10xxxxxx) — back up until we reach a leading byte
+            // (0xxxxxxx ASCII, or a 11xxxxxx multi-byte lead byte).
+            while (cut > 0 && (static_cast<unsigned char>(line[cut]) & 0xC0) == 0x80) {
+                --cut;
+            }
+            line.resize(cut);
+        }
         tokenize_line(line, ids);
         if (ids.empty()) continue;
         packer.feed(ids);
@@ -363,9 +384,17 @@ void PretrainDataset::print_info(std::ostream& os) const {
 // =============================================================================
 
 void TokenPacker::feed(const std::vector<uint32_t>& ids) {
+    // NOTE: `ids` already carries its own BOS/END markers — it comes from
+    // tok.encode(text, /*add_bos=*/true, /*add_eos=*/true) in train_cuda.cu,
+    // so every document is already wrapped as [BOS(0) ... END(4)]. This
+    // function used to additionally push_back(eos_id_) here, where
+    // eos_id_ was passed in as 0 (actually the model's BOS/<|endoftext|>
+    // id, not the true EOS id 4). That duplicated a BOS-like token at
+    // every document boundary, producing "...END(4), 0, 0, NEXT_DOC..."
+    // instead of the intended "...END(4), 0, NEXT_DOC...". The natural
+    // END->BOS transition already IS the document boundary marker, so no
+    // extra token is needed — just append the document's own ids.
     for (uint32_t id : ids) buffer_.push_back(id);
-    // Append EOS at document boundary
-    buffer_.push_back(eos_id_);
 }
 
 bool TokenPacker::pop_sequence(uint32_t* dst) {
