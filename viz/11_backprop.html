@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 11: Backpropagation</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selTok=0;
+function pickTok(i){selTok=i;PAGE.render(PAGE.sub);}
+initStagePage(10,5,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    if(sub===0){
+        fp.innerHTML=texBlock(`\\frac{\\partial\\mathcal{L}}{\\partial z_j}=m_i\\cdot\\frac{1}{N_{eff}}(\\text{softmax}(z)_j-\\mathbb{1}[j=t])`);
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        const sf=S.sfLog[selTok],tgt=TARGETS[selTok];
+        h+=`<div style="font-size:.68rem;text-align:center;margin:4px">Masked dL/dz token ${selTok} (target=${tgt}, Nₑ={{S.effectiveCount}})</div>`;
+        h+=htmlVec(S.dLogits[selTok],'dl','d_logits['+selTok+']');
+        h+='</div>';vc.innerHTML=h;
+        let d='<div class="comp-step active"><div class="comp-line"><strong>dL/dz = mask[i] · (softmax − one_hot) / N_eff</strong></div>';
+        for(let j=0;j<Math.min(8,CFG.V);j++){
+            const isT=j===tgt?1:0;
+            d+=`<div class="comp-line comp-terms">d[${j}]=${S.mask[selTok]}·(${(sf.probs[j]*100).toFixed(2)}%−${isT})/${S.effectiveCount}=${S.dLogits[selTok][j]}</div>`;
+        }
+        d+=`<div class="comp-line">... +${CFG.V-8} more</div></div>`;
+        cd.innerHTML=d;
+    } else if(sub===1){
+        fp.innerHTML=tex('\\text{Gradient flows backward through all layers}');
+        const layers=['Cross-Entropy (masked)','Logits → W_embed^T','d_embed_out seeds embed_accum','Final RMSNorm (dγ accum)','Residual #2',
+            'SwiGLU FFN (W₁,W₂,W₃)','RMSNorm Pre-FFN (dγ accum)','Residual #1','Output Proj (W_O)',
+            'Attention (4 heads)','RoPE backward (rotate back)','QKV Projection (W_Q,W_K,W_V)','RMSNorm Pre-Attn (dγ accum)','Embedding (scatter-add)'];
+        let h='<div class="grad-flow">';
+        layers.forEach((name,i)=>{h+=`<div class="grad-block" id="gb-${i}"><span style="min-width:200px;font-size:.68rem">← ${name}</span><span style="color:var(--orange);font-size:.62rem">∂L/∂x flows ←</span></div>`;});
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line">Gradient merambat mundur dari loss ke setiap layer. Chain rule: dL/dx_prev = dL/dx_next × ∂x_next/∂x_prev.</div>`;
+        animGradFlow(layers.length);
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`\\text{Weight-Tied Embedding Accumulator: }d\\text{embed}_{out} \\xrightarrow{seed} g.embed\\_accum \\xrightarrow{+scatter\\_add} \\Sigma d\\text{embed}_{in}`);
+        let h='<div class="comp-step active"><div style="font-size:.82rem;padding:10px">';
+        h+=`<div class="comp-line"><strong>d_embed_out = d_logits^T @ x_final</strong> → seeds g.embed_accum (FP32)</div>`;
+        h+=`<div class="comp-line" style="margin-top:5px;color:var(--orange)"><strong>launch_embed_scatter_add(dx, tokens, g.embed_accum)</strong> → adds input-embedding gradient</div>`;
+        h+=`<div class="comp-line" style="margin-top:5px">Result: g.embed_accum = Σ(d_embed_out + scatter_add per token position)</div>`;
+        h+=`<div class="comp-line" style="margin-top:5px;color:var(--purple)">This is the key architectural trick of weight tying!</div>`;
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">Weight tying: W_embed dipakai di input (embedding lookup) DAN output (logits projection). Gradien dari dua jalur diakumulasi di embed_accum (FP32) sebelum di-cast ke FP16.</div></div>';
+    } else if(sub===3){
+        fp.innerHTML=texBlock(`\\text{d}\\gamma = \\sum_i \\frac{\\partial L}{\\partial \\hat{y}_i} \\cdot \\frac{x_i}{\\text{RMS}(x)} \\quad \\text{(RMSNorm backward)}`);
+        let h='<div class="comp-step active"><div style="font-size:.82rem;padding:10px">';
+        h+=`<div class="comp-line"><strong>RMSNorm backward computes BOTH:</strong></div>`;
+        h+=`<div class="comp-line comp-terms" style="margin-top:5px">dx (gradient w.r.t. normalized input)</div>`;
+        h+=`<div class="comp-line comp-terms">dγ (gradient w.r.t. learnable scale parameter γ)</div>`;
+        h+=`<div class="comp-line" style="margin-top:5px">Real code: rms_norm_backward(normed, gamma, y_grad) → dx, dgamma via fused CUDA kernel</div>`;
+        h+=`<div class="comp-line" style="margin-top:5px;color:var(--orange)">RoPE backward: same rotation kernel with negated angles — mathematically a rotation back</div>`;
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">RMSNorm backward: dγ = Σ(dŷᵢ × xᵢ/rms). RoPE backward: identical forward kernel applied to dQ/dK (gradient rotates back by same angle).</div></div>';
+    } else {
+        fp.innerHTML=texBlock(`\\text{scale}=\\frac{\\text{clip}}{\\max(\\|\\nabla\\|_2,\\text{clip})} \\quad (\\text{clip}=${CFG.clip})`);
+        let h='<div style="width:100%;text-align:center">';
+        h+=`<div style="font-size:1rem;margin:8px">Gradient L2 Norm: <span style="color:var(--orange);font-weight:700">${fmt(S.gradNorm)}</span></div>`;
+        if(S.gradNorm>CFG.clip){
+            h+=`<div style="color:var(--red);font-size:.8rem">‖∇‖₂ > ${CFG.clip} → Clipping aktif!</div>`;
+            h+=`<div style="font-size:.75rem;margin:4px">scale = ${CFG.clip} / ${fmt(S.gradNorm)} = ${fmt(S.gradScale)}</div>`;
+        } else {
+            h+=`<div style="color:var(--green);font-size:.8rem">‖∇‖₂ ≤ ${CFG.clip} → Tidak perlu clipping</div>`;
+        }
+        h+=`<div style="margin-top:10px;font-size:.68rem;color:var(--dim)">Global L2 norm = √(Σ gᵢ²) over ALL ${1+13*9+1}=119 parameter gradient tensors (FP16) — clipped at ${CFG.clip}. Real model clips at the same threshold.</div>`;
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">Gradient clipping mencegah exploding gradients. Jika norm global > threshold, semua gradient di-scale down proporsional. Real model menggunakan fused CUDA kernel (launch_l2_norm_sq) untuk menghitung norm.</div></div>';
+    }
+    ex.textContent='Backprop: mask×CE grad → embed_accum seed → 13 layers reversed → RoPE back → QKV back → embed scatter-add. RMSNorm backward computes dγ per layer. Gradients clipped at global L2 norm.';
+});
+</script></body></html>

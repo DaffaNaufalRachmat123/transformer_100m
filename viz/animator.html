@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="id"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NanoLLM — Sequential Training Animator</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+body{overflow:hidden;height:100vh;display:flex;flex-direction:column}
+.top-bar{background:var(--panel);padding:6px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0}
+.top-bar h2{color:var(--blue);font-size:1rem;margin:0;white-space:nowrap}
+.top-bar .info{font-size:.68rem;color:var(--dim)}
+#stage-name{color:var(--green);font-weight:700;font-size:.82rem}
+#step-label{color:var(--cyan);font-size:.7rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prog-wrap{flex:1;min-width:120px;max-width:300px;height:6px;background:#222;border-radius:3px;position:relative}
+.prog-fill{height:100%;background:var(--green);border-radius:3px;transition:width .1s}
+#prog-pct{font-size:.6rem;color:var(--dim);position:absolute;right:0;top:-12px}
+.ctrl-bar{background:var(--panel);padding:5px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.ctrl-bar button{background:var(--blue);color:#fff;border:none;padding:5px 12px;border-radius:4px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.75rem}
+.ctrl-bar button:hover{filter:brightness(1.2)}
+.ctrl-bar button.skip{background:var(--purple)}
+.spd{display:flex;align-items:center;gap:4px;font-size:.65rem;color:var(--dim)}
+.spd input{width:60px;accent-color:var(--green)}
+.main-split{display:flex;flex:1;overflow:hidden}
+#mat-panel{flex:1;overflow:auto;padding:8px;border-right:1px solid var(--border)}
+#comp{width:380px;min-width:300px;overflow-y:auto;padding:8px;font-size:.68rem;line-height:1.6;background:#0a0a14;flex-shrink:0}
+#comp b{color:var(--text)}
+#comp .cr{color:var(--green);font-weight:700}
+#comp .cp{color:var(--orange)}
+#comp .ct{color:var(--dim)}
+/* grid styles */
+.ag-wrap{margin-bottom:8px}
+.ag-label{font-size:.62rem;color:var(--dim);font-weight:600;margin-bottom:2px}
+.ag-scroll{overflow:auto;max-height:250px}
+.ag-sec{margin-bottom:10px}
+.ag-sec h4{font-size:.72rem;color:var(--purple);margin:0 0 4px;border-bottom:1px solid var(--border);padding-bottom:2px}
+.ag-row{display:flex;gap:8px;flex-wrap:wrap}
+.mc.hl-fill{background:var(--yellow) !important;color:#000 !important;font-weight:700}
+.mc.hl-src{outline:1px solid var(--cyan)}
+.tb{display:inline-block;padding:3px 8px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;font-size:.7rem;margin:2px;transition:all .3s}
+.tb.hl{background:var(--green);color:#000;border-color:var(--green)}
+.bpe-area{padding:8px;min-height:30px}
+.tok-row{display:flex;gap:3px;flex-wrap:wrap}
+#total-steps{font-size:.62rem;color:var(--dim)}
+</style>
+</head><body>
+<div class="top-bar">
+    <h2>NanoLLM Animator</h2>
+    <span id="stage-name">Loading...</span>
+    <span id="step-info" class="info">Step 0</span>
+    <span id="step-label" class="info"></span>
+    <div class="prog-wrap"><div class="prog-fill" id="prog-bar" style="width:0"></div><span id="prog-pct">0%</span></div>
+    <span id="total-steps" class="info"></span>
+</div>
+<div class="ctrl-bar">
+    <button id="btn-play" onclick="togglePlay()">▶ Play</button>
+    <button onclick="doStep()">⏭ Step</button>
+    <button class="skip" onclick="skipStage()">⏩ Skip Stage</button>
+    <div class="spd"><span>Speed:</span><input type="range" id="spd-slider" min="1" max="10" value="5" oninput="onSpeed()"><span id="spd-label">5x</span></div>
+    <span style="font-size:.62rem;color:var(--dim)">d=32 | V=128 | seq=16 | heads=4 | GQA(2KV)</span>
+</div>
+<div class="main-split">
+    <div id="mat-panel"></div>
+    <div id="comp">Tekan <b>⏭ Step</b> atau <b>▶ Play</b> untuk mulai.<br><br>Setiap langkah menghitung SATU nilai dan mengisi sel tabel secara berbarengan dengan proses hitungnya.</div>
+</div>
+<script src="shared.js"></script>
+<script src="animator.js"></script>
+<script>window.addEventListener('load',()=>setTimeout(animInit,100));</script>
+</body></html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 3: RMSNorm</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selTok=0;
+function pickTok(i){selTok=i;PAGE.render(PAGE.sub);}
+initStagePage(2,3,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    fp.innerHTML=texBlock('\\hat{x} = \\frac{x}{\\sqrt{\\frac{1}{d}\\sum x_i^2 + \\epsilon}} \\cdot \\gamma');
+    const det=S.norm1D[selTok], row=S.X[selTok];
+    if(sub===0){
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        h+=htmlVec(row,'rms-in',`x[${selTok}] (input embedding)`);
+        h+='</div>';vc.innerHTML=h;
+        // Full RMSNorm computation — ALL elements, no truncation
+        cd.innerHTML=htmlFullRmsNorm(row,W.g1,`RMSNorm token ${selTok}`);
+    } else if(sub===1){
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        h+=htmlVec(det.scaled,'rms-out',`ŷ[${selTok}] (output setelah RMSNorm)`);
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML=htmlFullRmsNorm(row,W.g1,`RMSNorm token ${selTok} (scroll untuk lihat semua)`);
+    } else {
+        let h='<div style="width:100%">';
+        h+=htmlMat(S.norm1,'n1-out',`RMSNorm Output [${CFG.seq}×${CFG.d}]`);
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">Semua '+CFG.seq+' token telah dinormalisasi. Pilih token di atas untuk lihat detail hitung lengkap.</div></div>';
+    }
+    ex.textContent='RMSNorm menormalisasi vektor berdasarkan Root Mean Square. Lebih efisien dari LayerNorm karena tidak menghitung mean. γ adalah parameter learnable (32 elemen).';
+});
+</script></body></html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 7: Output Projection</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selTok=0;
+function pickTok(i){selTok=i;PAGE.render(PAGE.sub);}
+initStagePage(6,3,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    if(sub===0){
+        fp.innerHTML=texBlock(`O_{concat}=[O_{h0}\\|O_{h1}\\|O_{h2}\\|O_{h3}] \\quad [${CFG.seq}{\\times}${CFG.d}]`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle()+'<div class="matrices-row" style="gap:6px">';
+        S.heads.forEach((hd,i)=>{h+=htmlHeatmap(hd.out,`ch${i}`,`H${i} [16×8]`,{cellSize:6});if(i<3)h+='<div class="op-symbol" style="font-size:.9rem">‖</div>';});
+        h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(S.concat,'cc','Concat [16×32]',{cellSize:5});
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">4 heads × [16×8] concat → [16×32] = d_model restored.</div></div>';
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`O_{proj}=O_{concat}\\cdot W_O \\quad [${CFG.seq}{\\times}${CFG.d}]\\times[${CFG.d}{\\times}${CFG.d}]`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle()+'<div class="matrices-row">';
+        h+=htmlHeatmap(S.concat,'pi','Concat');h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(W.Wo,'pw','W_O [32×32]');h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(S.proj,'po','Proj [16×32]');
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(S.concat[0],getCol(W.Wo,0),'Proj[0][0]');
+    } else {
+        fp.innerHTML=texBlock(`X_{mid}=X+O_{proj} \\quad \\text{(Residual)}`);
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        h+=`<div style="text-align:center;font-size:.72rem;margin:4px 0;color:var(--dim)">Token ${selTok}: residual per-elemen</div>`;
+        h+='<div class="matrices-row">';
+        h+=htmlVec(S.X[selTok],'rx','X['+selTok+'] (input asli)');
+        h+='<div class="op-symbol">+</div>';
+        h+=htmlVec(S.proj[selTok],'rp','Proj['+selTok+'] (attention output)');
+        h+='</div>';
+        h+=`<div style="text-align:center;margin:4px 0" class="op-symbol">=</div>`;
+        h+=htmlVec(S.res1[selTok],'ro','X_mid['+selTok+'] (result)');
+        h+='</div>';vc.innerHTML=h;
+        // FULL residual — ALL 32 elements
+        cd.innerHTML=htmlFullResidual(S.X[selTok],S.proj[selTok],`Residual #1 token ${selTok} — semua ${CFG.d} elemen`);
+    }
+    ex.textContent='Output Projection (W_O) memetakan concat output kembali ke d_model. Residual connection menjumlahkan input asli — gradien mengalir langsung melewati residual path.';
+});
+</script></body></html>

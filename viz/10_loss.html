@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 10: Cross-Entropy Loss</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selTok=0;
+function pickTok(i){selTok=i;PAGE.render(PAGE.sub);}
+initStagePage(9,4,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    if(sub===0){
+        fp.innerHTML=texBlock(`\\hat{x}_{final}=\\text{RMSNorm}(x_{out},\\gamma_f)`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle();
+        h+=htmlAuto(S.normF,'nf','Final RMSNorm [16×32]');
+        h+='</div>';vc.innerHTML=h;
+        const d0=S.normFD[0];
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line">RMS[0]=${fmt(d0.rms)}. Semua 16 token dinormalisasi sebelum output logits.</div></div>`;
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`\\text{logits}=\\hat{x}_{final}\\cdot W_{embed}^T \\quad [${CFG.seq}{\\times}${CFG.d}]\\times[${CFG.d}{\\times}${CFG.V}]=[${CFG.seq}{\\times}${CFG.V}]`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle()+'<div class="matrices-row">';
+        h+=htmlHeatmap(S.normF,'lx','X̂_final [16×32]',{cellSize:5});
+        h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(transpose(W.embed),'lw','W_embed^T [32×128]',{cellSize:3});
+        h+='</div>';
+        h+=`<div style="text-align:center;font-size:.68rem;color:var(--orange);margin:4px">Weight Tying: output menggunakan W_embed transposed</div>`;
+        h+=htmlHeatmap(S.logits,'lo','Logits [16×128]',{cellSize:3});
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML=htmlFullDotProd(S.normF[0],getCol(transpose(W.embed),0),'Logits[0][0] — 32-term dot product');
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`p_j=\\frac{e^{z_j-\\max}}{\\sum_k e^{z_k-\\max}}`);
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        const tgt=TARGETS[selTok];
+        h+=`<div style="font-size:.72rem;text-align:center;margin:4px">Softmax over ${CFG.V} vocab items (token ${selTok}, target=${tgt})</div>`;
+        h+='</div>';vc.innerHTML=h;
+        // FULL SOFTMAX — all 128 elements, no truncation
+        cd.innerHTML=htmlFullSoftmax(S.logits[selTok],tgt,`Softmax token ${selTok} — semua ${CFG.V} vocab items`);
+    } else {
+        fp.innerHTML=texBlock(`\\mathcal{L}=-\\frac{1}{N_{eff}}\\sum_i m_i\\cdot\\log(p_{target_i})\\quad(m_i=0\\text{ for pad tokens})`);
+        let h='<div style="width:100%;text-align:center">';
+        h+=`<div style="font-size:1.3rem;color:var(--red);font-weight:700;margin:8px">Total Loss = ${fmt(S.totalLoss)}</div>`;
+        h+=`<div style="font-size:.65rem;color:var(--orange);margin:2px">Masked CE: N_eff=${S.effectiveCount} (pad token id=${CFG.padId} excluded from loss)</div>`;
+        h+=`<div style="overflow-x:auto"><table style="margin:4px auto;border-collapse:collapse;font-size:.62rem">`;
+        h+='<tr><th style="padding:2px 5px;border:1px solid var(--border)">Tok</th><th style="padding:2px 5px;border:1px solid var(--border)">Text</th><th style="padding:2px 5px;border:1px solid var(--border)">Target</th><th style="padding:2px 5px;border:1px solid var(--border)">Mask</th><th style="padding:2px 5px;border:1px solid var(--border)">P(tgt)</th><th style="padding:2px 5px;border:1px solid var(--border)">−log(P)</th></tr>';
+        for(let i=0;i<CFG.seq;i++){
+            const t=TARGETS[i],p=S.sfLog[i].probs[t];
+            h+=`<tr style="background:${S.mask[i]?'':'#2a0a0a'}"><td style="padding:2px 5px;border:1px solid var(--border)">${i}</td><td style="padding:2px 5px;border:1px solid var(--border)">${TOKENS_TEXT[i]}</td><td style="padding:2px 5px;border:1px solid var(--border)">${t}</td><td style="padding:2px 5px;border:1px solid var(--border);color:${S.mask[i]?'var(--green)':'var(--red)'}">${S.mask[i]?'✓':'✗'}</td><td style="padding:2px 5px;border:1px solid var(--border);color:var(--cyan)">${(p*100).toFixed(2)}%</td><td style="padding:2px 5px;border:1px solid var(--border);color:var(--red)">${fmt(S.maskedLoss[i])}</td></tr>`;
+        }
+        h+='</table></div>';
+        h+=`<div style="font-size:.68rem;color:var(--dim);margin-top:4px">Total = Σ(masked_losses) / N_eff = ${fmt(S.maskedLoss.reduce((a,b)=>a+b,0))} / ${S.effectiveCount} = ${fmt(S.totalLoss)}</div>`;
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Masked CE Loss:</strong> per-token loss × mask[i] (0 for pads), lalu dibagi jumlah token non-pad (N_eff). Pad token id=${CFG.padId} tidak berkontribusi ke loss.</div></div>`;
+    }
+    ex.textContent='Cross-Entropy: logits [16×128] → softmax → probabilitas per vocab ID → loss = −log(P[target]). Weight tying: W_embed dipakai ulang sebagai output projection.';
+});
+</script></body></html>

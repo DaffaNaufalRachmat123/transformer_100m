@@ -1,0 +1,137 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 15: Training Infrastructure</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initStagePage(14,6,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+
+    if(sub===0){
+        // Arena memory allocator
+        fp.innerHTML=texBlock(`\\text{CudaArena: bump-pointer pool, reset per step, 75% of free VRAM}`);
+        let h=`<div style="width:100%;text-align:center"><div class="mat-label">Arena Memory Allocator</div>`;
+        h+=`<div style="padding:12px;background:var(--panel2);border-radius:8px;max-width:550px;margin:8px auto;font-size:.72rem">`;
+        h+=`<div style="display:flex;gap:8px;align-items:flex-end;justify-content:center;margin:10px 0">`;
+        const totalVRAM=14.6, free=13.5, arena=free*0.75, params=0.2, opt=0.8, fwd=arena;
+        h+=`<div style="background:var(--green);width:${(params/totalVRAM*300)}px;height:60px;border-radius:4px 0 0 4px;display:flex;align-items:center;justify-content:center;font-size:.55rem" title="Model FP16: 202MB">Params</div>`;
+        h+=`<div style="background:var(--purple);width:${(opt/totalVRAM*300)}px;height:60px;display:flex;align-items:center;justify-content:center;font-size:.55rem" title="Optimizer FP32: 808MB">Optim</div>`;
+        h+=`<div style="background:var(--orange);width:${(arena/totalVRAM*300)}px;height:60px;display:flex;align-items:center;justify-content:center;font-size:.55rem" title="Arena Pool: 75% free">Arena</div>`;
+        h+=`<div style="background:var(--border);width:${((totalVRAM-params-opt-arena-0.1)/totalVRAM*300)}px;height:60px;border-radius:0 4px 4px 0;display:flex;align-items:center;justify-content:center;font-size:.55rem">Free</div>`;
+        h+=`</div>`;
+        h+=`<div style="font-size:.62rem;color:var(--dim);margin-top:6px">Total VRAM: ${totalVRAM}GB | Arena = ${(arena).toFixed(1)}GB (75% of free) | Reset per step — 0 cudaMalloc during training</div>`;
+        h+=`<div style="font-size:.62rem;color:var(--orange);margin-top:4px">Real code: cuda::arena.init_auto(0.75f) → arena.reset() setiap step → tanpa allocate baru O(1)</div>`;
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line"><strong>Arena Allocator:</strong> Pool memori transient 75% VRAM bebas, di-reset tiap step training. Forward/backward cuma pakai dari pool — tidak ada cudaMalloc/cudaFree per-step (eliminates ~600+ GPU allocs).</div></div>';
+    } else if(sub===1){
+        // Data streaming pipeline
+        fp.innerHTML=texBlock(`\\text{PretrainDataset: ring buffer }\\to\\text{ weighted sampling }\\to\\text{ TokenPacker}`);
+        let h=`<div style="width:100%;text-align:center"><div class="mat-label">Streaming Data Pipeline</div>`;
+        h+=`<div style="padding:12px;background:var(--panel2);border-radius:8px;max-width:650px;margin:8px auto;font-size:.68rem;text-align:left">`;
+        h+=`<div style="display:flex;flex-direction:column;gap:6px">`;
+        const steps=[
+            ['📁 4 Corpus Files','ID (1.4GB) + EN (1.5GB) + JA (2.4GB) + KO (2.0GB)',''],
+            ['🎲 Weighted Sampling','discrete_distribution per language × file size','$01_bpe.html'],
+            ['📖 Random Seek + getline','geser ke offset acak, baca sequential sampai N tokens','$02_embedding'],
+            ['✂️ UTF-8-Aware Truncation','1024-byte cap, trim ke batas codepoint valid (bukan byte-level)','$03_rmsnorm'],
+            ['🔤 Tokenize via BPE','tok.encode(text, add_bos=true, add_eos=true)','$04_qkv'],
+            ['📦 TokenPacker','concatenate dokumen sampai seq_len tokens terisi','$05_rope'],
+            ['🔄 Ring Buffer (capacity=4)','prefetch thread → deque<Shard> → next_batch()','$06_attention'],
+            ['🌍 Cross-Lang Mix','4 shards dicampur per batch (mencegah single-lang oscillation)','$09_swiglu']
+        ];
+        steps.forEach(([title,desc],i)=>{
+            h+=`<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:var(--panel1);border-radius:4px">`;
+            h+=`<div style="min-width:24px;text-align:center;font-weight:700;color:var(--cyan)">${i+1}</div>`;
+            h+=`<div><strong>${title}</strong><div style="font-size:.6rem;color:var(--dim)">${desc}</div></div>`;
+            h+=`</div>`;
+        });
+        h+=`</div></div></div>`;vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line"><strong>Streaming Dataset:</strong> Tidak loading seluruh corpus ke RAM. Prefetch thread membaca dari disk di offset random, mem-pack token dengan BPE, dan mengisi ring buffer. next_batch() membaca dari buffer, mencampur 4 shard (4 bahasa) per batch.</div></div>';
+    } else if(sub===2){
+        // GQA ratio 9:3
+        fp.innerHTML=texBlock(`\\text{GQA: }n_{qh}=9,\\ n_{kvh}=3 \\quad \\text{Ratio }9:3=3\\text{ query heads per KV head}`);
+        let h=`<div style="width:100%;text-align:center"><div class="mat-label">GQA Ratio 9:3 — Query Heads Sharing KV Heads</div>`;
+        h+=`<div style="display:flex;justify-content:center;gap:4px;margin:12px 0;flex-wrap:wrap">`;
+        for(let h=0;h<9;h++){
+            const kvh=Math.floor(h/3);
+            const colors=['#00ffcc','#00ffcc','#00ffcc','#ff6600','#ff6600','#ff6600','#cc00ff','#cc00ff','#cc00ff'];
+            h+=`<div style="border:2px solid ${colors[h]};border-radius:6px;padding:8px;min-width:70px;text-align:center;background:var(--panel2)">`;
+            h+=`<div style="font-size:.55rem;color:var(--dim)">Q${h}</div>`;
+            h+=`<div style="font-size:.7rem;font-weight:700;color:${colors[h]}">→ KV${kvh}</div>`;
+            h+=`</div>`;
+        }
+        h+=`</div>`;
+        h+=`<div style="font-size:.68rem;color:var(--dim);margin-top:4px">3 grup: Q[0-2]→KV0 | Q[3-5]→KV1 | Q[6-8]→KV2</div>`;
+        h+=`<div style="font-size:.65rem;color:var(--orange);margin-top:8px;max-width:550px;margin:8px auto;text-align:left;padding:6px;background:var(--panel1);border-radius:4px">`;
+        h+=`<strong>KV cache savings:</strong> 3× lebih sedikit memory untuk KV dibanding MHA (9 head). Dengan 3 grup KV, memory = O(HKV × S × dH) = O(3×S×64), bukan O(9×S×64). Di seq=2048, penghematan = 6×64×2048 = 768K elemen × 2 byte = ~1.5MB per layer, ~20MB total untuk 13 layer.</div>`;
+        h+=`</div>`;vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line"><strong>GQA (Grouped Query Attention):</strong> 9 query head berbagi 3 KV head. hkv = hq / (HQ/HKV) = hq / 3. Memory KV cache berkurang 3× vs MHA.</div></div>';
+    } else if(sub===3){
+        // Auto-decay mechanism
+        fp.innerHTML=texBlock(`\\text{Auto-Decay: EMA}_{local\\_min}\\times1.08<\\text{ema?}\\ \\text{decay}=\\max(0.2,\\text{decay}\\times0.7)`);
+        let h=`<div style="width:100%;text-align:center"><div class="mat-label">Auto-Decay / Auto-Recovery Safety Net</div>`;
+        h+=`<div style="padding:12px;background:var(--panel2);border-radius:8px;max-width:600px;margin:8px auto;font-size:.72rem;text-align:left">`;
+        h+=`<div style="margin:4px 0"><strong>Check setiap 20 step:</strong></div>`;
+        h+=`<div style="margin:4px 0;color:var(--red)">🔻 <strong>AUTO-DECAY:</strong> IF ema_loss > ema_local_min × 1.08 → lr_decay_factor *= 0.7 (min 0.2)</div>`;
+        h+=`<div style="margin:4px 0">— re-baseline: ema_local_min = cur_ema</div>`;
+        h+=`<div style="margin:4px 0;color:var(--green)">🟢 <strong>AUTO-RECOVER:</strong> IF ema_loss stable (≤ local_min × 1.02) for 100 consecutive steps AFTER decay → lr_decay_factor /= 0.7 (max 1.0)</div>`;
+        h+=`<div style="margin:8px 0;padding:6px;background:var(--panel1);border-radius:4px;font-size:.65rem">`;
+        h+=`<div>Decay levels: 1.00 → 0.70 → 0.49 → 0.34 → 0.24 → (floor 0.20)</div>`;
+        h+=`<div>Recovery levels: 0.20 → 0.29 → 0.41 → 0.58 → 0.83 → 1.00</div>`;
+        h+=`<div style="margin-top:4px">Max 5 trigger = LR bisa turun ke 20%. Recovery butuh 5×100 = 500 step stabil untuk balik ke 100%.</div>`;
+        h+=`</div></div></div>`;vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line"><strong>Safety net: Slow-creep vs instant spike.</strong> Spike detector (ema×1.4 && >5.5) menangkap lonjakan tiba-tiba. Auto-decay menangkap EMA naik perlahan (drift) — di-reset ulang baseline tiap trigger untuk mencegah false-positive. Recovery hanya 1 tingkat per 100 step untuk menghindari overshoot.</div></div>';
+    } else if(sub===4){
+        // Weight tying detail
+        fp.innerHTML=texBlock(`\\text{Weight Tying: }W_{embed}\\text{ = input AND output. }g.embed\\_accum = \\text{output\\_grad} + \\text{scatter\\_add(input\\_grad)}`);
+        let h=`<div style="width:100%;text-align:center"><div class="mat-label">Weight-Tied Embedding Gradient Accumulation</div>`;
+        h+=`<div style="padding:12px;background:var(--panel2);border-radius:8px;max-width:600px;margin:8px auto;font-size:.72rem;text-align:left">`;
+        h+=`<div style="display:flex;gap:8px;justify-content:center;margin:8px 0;flex-wrap:wrap">`;
+        h+=`<div style="border:2px solid var(--cyan);border-radius:6px;padding:10px;max-width:250px;text-align:center;font-size:.68rem">`;
+        h+=`<div style="font-weight:700;color:var(--cyan)">Jalur 1: Output Proj</div>`;
+        h+=`<div style="margin-top:4px">d_embed_out = d_logits^T @ x_final</div>`;
+        h+=`<div style="color:var(--orange);margin-top:2px">→ seeds g.embed_accum (FP32)</div>`;
+        h+=`</div>`;
+        h+=`<div style="font-size:1.5rem;color:var(--green);display:flex;align-items:center">+</div>`;
+        h+=`<div style="border:2px solid var(--purple);border-radius:6px;padding:10px;max-width:250px;text-align:center;font-size:.68rem">`;
+        h+=`<div style="font-weight:700;color:var(--purple)">Jalur 2: Input Embed</div>`;
+        h+=`<div style="margin-top:4px">scatter_add(dx[i], token[i], accum)</div>`;
+        h+=`<div style="color:var(--orange);margin-top:2px">→ adds to g.embed_accum (FP32)</div>`;
+        h+=`</div>`;
+        h+=`</div>`;
+        h+=`<div style="margin-top:8px;text-align:center;font-size:.68rem;color:var(--dim)">order: seed (from output) BEFORE backward → backward adds via scatter → final FP32 accumulation</div>`;
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line"><strong>2-source gradient:</strong> Weight tying means W_embed gets gradients from TWO paths — (1) output logit projection dW = d_logits^T · x_final, (2) input embedding lookup via scatter_add. Path 1 happens BEFORE backward() is called, seeding the FP32 accumulator. Path 2 adds during each token position in backward.</div></div>';
+    } else {
+        // Final summary
+        fp.innerHTML=texBlock(`\\text{transformer\\_100m\\_cuda}: D{=}576, L{=}13, QH{=}9, KVH{=}3, DH{=}64, FFN{=}2304, V{=}65536`);
+        let h=`<div style="width:100%;text-align:center">`;
+        h+=`<div style="font-size:1.2rem;color:var(--green);font-weight:700;margin:10px">Full Training Pipeline Summary</div>`;
+        h+=`<div style="padding:12px;background:var(--panel2);border-radius:8px;max-width:650px;margin:8px auto;font-size:.68rem;text-align:left">`;
+        h+=`<div style="color:var(--yellow);font-weight:700;margin-bottom:6px">Architecture (100M params)</div>`;
+        h+=`<div>• GQA + RoPE + RMSNorm + SwiGLU + Weight Tying</div>`;
+        h+=`<div>• 13 decoder layers, d_model=576, d_head=64</div>`;
+        h+=`<div>• 9 query heads, 3 KV heads (GQA 3:1 ratio)</div>`;
+        h+=`<div>• FFN=2304 (4× model dim), Vocab=65536 (quadrilingual BPE)</div>`;
+        h+=`<div style="color:var(--yellow);font-weight:700;margin-top:8px;margin-bottom:4px">Training Infrastructure</div>`;
+        h+=`<div>• FP16 Mixed Precision on T4 (sm_75), 14.6 GB VRAM</div>`;
+        h+=`<div>• Cosine LR Schedule (peak ${REAL_CFG.lr.toExponential(1)}, ${WARMUP} warmup steps)</div>`;
+        h+=`<div>• AdamW (β₁=${CFG.b1}, β₂=${CFG.b2}, wd=${CFG.wd}, grad_clip=${CFG.clip})</div>`;
+        h+=`<div>• 3-phase Curriculum: ${PHASES.map(p=>`seq=${p.seq}(${p.pct}%)`).join(' → ')}</div>`;
+        h+=`<div>• Arena Memory Allocator (75% VRAM pool, reset per step)</div>`;
+        h+=`<div>• Streaming Dataset (ring buffer, 4-lang cross-mix per batch)</div>`;
+        h+=`<div>• Auto-Decay/Recovery safety net (EMA drift detector)</div>`;
+        h+=`<div style="color:var(--yellow);font-weight:700;margin-top:8px;margin-bottom:4px">Data Pipeline</div>`;
+        h+=`<div>• 4 corpus files: EN, ID, JA, KO — weighted language sampling per phase</div>`;
+        h+=`<div>• UTF-8-aware 1024-byte truncation (protects JA/KO codepoints)</div>`;
+        h+=`<div>• TokenPacker concatenates docs until seq_len tokens filled</div>`;
+        h+=`<div style="color:var(--yellow);font-weight:700;margin-top:8px;margin-bottom:4px">Safety Mechanisms</div>`;
+        h+=`<div>• Spike detector: skip step if loss > ema × 1.4 && loss > 5.5</div>`;
+        h+=`<div>• Phase-transition warmup ramp: 200-step cooldown at curriculum switch</div>`;
+        h+=`<div>• OOM handler: emergency upload + clean exit with checkpoint</div>`;
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML='<div class="comp-step active"><div class="comp-line">Complete pipeline: streaming data → BPE tokenization → GQA Transformer forward → masked CE loss → backprop with embed_accum → gradient clipping → AdamW update → cosine LR schedule → checkpoint save. All operations in FP16 mixed precision on T4 GPU.</div></div>';
+    }
+    ex.textContent='Training Infrastructure: Arena allocator (75% VRAM pool), streaming data pipeline (ring buffer + language weights), GQA 9:3 ratio, auto-decay/recovery safety net, weight-tying embed gradient accumulation. Real model: 101M params, 13 layers, 1.42B tokens target.';
+});
+</script></body></html>

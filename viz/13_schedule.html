@@ -1,0 +1,104 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 13: Cosine LR Schedule + Warmup</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="chart-container" style="position:relative;width:100%;height:320px;margin:8px 0;background:var(--panel1);border-radius:8px;overflow:hidden"></div>
+<div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+const TOTAL_STEPS=79241;
+const WARMUP=1000;
+const MIN_LR=REAL_CFG.lr*0.1;
+const PEAK_LR=REAL_CFG.lr;
+
+function cosineLr(step){
+    if(step<WARMUP) return PEAK_LR*step/WARMUP;
+    const p=(step-WARMUP)/(TOTAL_STEPS-WARMUP);
+    return MIN_LR+0.5*(PEAK_LR-MIN_LR)*(1+Math.cos(Math.PI*p));
+}
+
+let animSection=null;
+initStagePage(12,4,function(sub){
+    const fp=document.getElementById('formula-panel');
+    const cd=document.getElementById('comp-detail');
+    const ex=document.getElementById('explanation');
+    const ct=document.getElementById('chart-container');
+
+    if(sub===0){
+        fp.innerHTML=texBlock(`\\text{Warmup: lr}(t)=\\text{lr}_{peak}\\cdot\\frac{t}{T_{warmup}}\\quad(t<T_{warmup})`);
+        drawChart('warmup',0,WARMUP+500);
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Warmup Phase:</strong> LR naik linear dari 0 ke ${PEAK_LR.toExponential(1)} selama ${WARMUP.toLocaleString('id')} step pertama.</div>
+        <div class="comp-line comp-terms" style="margin-top:3px">Real: warmup_steps = min(1000, est_total_steps/20)</div>
+        <div class="comp-line comp-terms">Alasan: di awal training gradient masih tidak stabil — step besar bisa langsung overshoot.</div></div>`;
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`\\text{lr}(t)=\\text{lr}_{min}+\\frac{\\text{lr}_{peak}-\\text{lr}_{min}}{2}\\left(1+\\cos\\left(\\pi\\cdot\\frac{t-T_w}{T_{total}-T_w}\\right)\\right)`);
+        drawChart('cosine',0,TOTAL_STEPS);
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Cosine Decay Phase:</strong> LR turun mengikuti kurva cosinus dari peak ke min setelah warmup.</div>
+        <div class="comp-line comp-terms" style="margin-top:3px">min_lr = ${PEAK_LR.toExponential(1)} × 0.1 = ${MIN_LR.toExponential(1)}</div>
+        <div class="comp-line comp-terms">Persis di tengah training: LR = rata-rata peak dan min.</div></div>`;
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`\\text{Phase Cooldown: lr} \\leftarrow \\text{lr}\\cdot\\text{ramp}(\\Delta)\\quad\\Delta\\in[0,kPhaseWarmupSteps]`);
+        const st=WARMUP+10000;
+        drawChartMulti('cooldown',[
+            {label:'Cosine',data:genCurve(0,TOTAL_STEPS,cosineLr),color:'#333'},
+            {label:'+Cooldown',data:genCurve(0,TOTAL_STEPS,s=>{let lr=cosineLr(s);const d=s-st;if(d>=0&&d<200)lr*=0.3+0.7*d/200;return lr;}),color:'#00ffcc'}
+        ]);
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Phase Cooldown Ramp:</strong> Momen transisi kurikulum (seq_len ganti), LR dikalikan ramp 30%→100% selama 200 step.</div>
+        <div class="comp-line comp-terms" style="margin-top:3px">Ramp = 0.3 + 0.7 × (step_since_switch / 200)</div>
+        <div class="comp-line comp-terms">Real: terjadi di transisi seq=256→512 dan 512→1024. Memberi waktu optimizer adaptasi ke konteks lebih panjang.</div></div>`;
+    } else {
+        fp.innerHTML=texBlock(`\\text{Auto-Decay: lr} \\leftarrow \\text{lr}\\cdot\\text{lr\\_decay\\_factor}\\quad(0.2\\le\\text{decay}\\le1.0)`);
+        drawChartMulti('autodecay',[
+            {label:'Cosine',data:genCurve(0,TOTAL_STEPS,cosineLr),color:'#333'},
+            {label:'+Auto-Decay',data:genCurve(0,TOTAL_STEPS,s=>{let lr=cosineLr(s);let d=1;for(const b of [18000,42000,58000]){if(s>=b&&s<b+500)d=Math.max(0.2,d*0.7);if(s>b+600&&s<b+700)d=Math.min(1,d/0.7);}return lr*d;}),color:'#ff6600'}
+        ]);
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Auto-Decay / Recovery:</strong> Safety net — jika EMA loss drift +8% di atas local-minimum, LR turun otomatis (×0.7 tiap trigger).</div>
+        <div class="comp-line comp-terms" style="margin-top:3px">Recovery: jika training stabil 100 step setelah decay, LR naik balik 1 tingkat (÷0.7).</div>
+        <div class="comp-line comp-terms">Floor: lr_decay_factor ≥ 0.2 (max LR reduction = 5×). Ini mencegah training stuck permanen.</div></div>`;
+    }
+    ex.textContent='Cosine LR Schedule + Warmup: LR=1.5e-4 peak, 1.5e-5 min, 1000 warmup steps. Cooldown ramp (30%→100% per 200 steps) di setiap phase transition. Auto-decay/recovery sebagai safety net terakhir melawan slow-creep divergence.';
+});
+
+// ─── CHART RENDERING ───
+function genCurve(start,end,fn){
+    const res=[];
+    for(let s=start;s<=end;s+=Math.ceil((end-start)/800))res.push({x:s,y:fn(s)});
+    return res;
+}
+function drawChart(lbl,start,end){
+    drawChartMulti(lbl,[{label:'LR',data:genCurve(start,end,cosineLr),color:'#00ffcc'}]);
+}
+function drawChartMulti(lbl,series){
+    const ct=document.getElementById('chart-container');
+    const W=ct.clientWidth||700,H=ct.clientHeight||320;
+    ct.innerHTML='';
+
+    const allY=series.flatMap(s=>s.data.map(d=>d.y));
+    const yMin=Math.min(...allY)*0.8,yMax=Math.max(...allY)*1.15;
+    const allX=series.flatMap(s=>s.data.map(d=>d.x));
+    const xMin=Math.min(...allX),xMax=Math.max(...allX);
+
+    const xFr=W-60,yFr=H-40;
+    function x(d){return 50+(d-xMin)/(xMax-xMin)*xFr}
+    function y(d){return 20+(yMax-d)/(yMax-yMin)*yFr}
+
+    const svg=`<svg width="${W}" height="${H}" style="position:absolute;top:0;left:0">`+
+        `<line x1="50" y1="${20+yFr}" x2="${50+xFr}" y2="${20+yFr}" stroke="var(--border)"/><line x1="50" y1="20" x2="50" y2="${20+yFr}" stroke="var(--border)"/>`+
+        series.map((s,i)=>
+            `<polyline fill="none" stroke="${s.color}" stroke-width="${i===0?1.5:2.5}" stroke-dasharray="${i===0?'8,4':''}" points="${s.data.map(d=>`${x(d.x)},${y(d.y)}`).join(' ')}"/>`
+        ).join('')+
+        `<text x="${W/2}" y="${H-8}" fill="var(--dim)" font-size="9" text-anchor="middle">Step</text>`+
+        `<text x="15" y="${H/2}" fill="var(--dim)" font-size="9" text-anchor="middle" transform="rotate(-90,15,${H/2})">LR</text>`+
+        // Y-axis labels
+        `<text x="46" y="${y(PEAK_LR)+4}" fill="var(--cyan)" font-size="9" text-anchor="end">${PEAK_LR.toExponential(1)}</text>`+
+        `<text x="46" y="${y(MIN_LR)+4}" fill="var(--dim)" font-size="9" text-anchor="end">${MIN_LR.toExponential(1)}</text>`+
+        // Legend
+        series.map((s,i)=>`<rect x="${W-220+i*120}" y="10" width="12" height="12" fill="${s.color}"/><text x="${W-205+i*120}" y="20" fill="var(--dim)" font-size="9">${s.label}</text>`).join('')+
+        // Warmup marker
+        `<line x1="${x(WARMUP)}" y1="20" x2="${x(WARMUP)}" y2="${20+yFr}" stroke="#00ffcc33" stroke-dasharray="4,6"/><text x="${x(WARMUP)+4}" y="18" fill="#00ffcc66" font-size="8">warmup</text>`+
+    `</svg>`;
+
+    // Labels overlay
+    let html=`<div style="position:relative;width:${W}px;height:${H}px">${svg}</div>`;
+    ct.innerHTML=html;
+}
+</script></body></html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 6: Attention</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selHead=0,selRow=0;
+function pickHead(i){selHead=i;PAGE.render(PAGE.sub);}
+function pickRow(i){selRow=i;PAGE.render(PAGE.sub);}
+initStagePage(5,5,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    const hd=S.heads[selHead],scale=+(1/Math.sqrt(CFG.dh)).toFixed(4);
+    if(sub===0){
+        fp.innerHTML=texBlock(`\\text{Score}=Q_h\\cdot K_{kv}^T \\quad [${CFG.seq}{\\times}${CFG.dh}]\\times[${CFG.dh}{\\times}${CFG.seq}]=[${CFG.seq}{\\times}${CFG.seq}]`);
+        let h='<div style="width:100%">'+htmlHeadSelector(CFG.nqh,selHead,'pickHead');
+        h+=`<div style="text-align:center;font-size:.68rem;color:var(--dim);margin:2px">Head ${selHead} uses KV head ${hd.kvh}</div>`;
+        h+='<div class="matrices-row">';
+        h+=htmlHeatmap(hd.Qh,'aq',`Q_h${selHead} [16×8]`,{cellSize:8});
+        h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(transpose(hd.Kh),'akt',`K${hd.kvh}ᵀ [8×16]`,{cellSize:8});
+        h+='<div class="op-symbol">=</div>';
+        h+=htmlAuto(hd.sc,'asc','Scores [16×16]');
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(hd.Qh[0],getCol(transpose(hd.Kh),0),'Score[0][0]');
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`\\text{Scaled}=\\text{Score}\\times\\frac{1}{\\sqrt{d_{head}}}=\\text{Score}\\times ${scale}`);
+        let h='<div style="width:100%">'+htmlHeadSelector(CFG.nqh,selHead,'pickHead');
+        h+='<div class="matrices-row">';
+        h+=htmlAuto(hd.sc,'sc-r','Scores');
+        h+=`<div class="op-symbol">×${scale}=</div>`;
+        h+=htmlAuto(hd.scaled,'sc-s','Scaled [16×16]');
+        h+='</div></div>';vc.innerHTML=h;
+        let d='<div class="comp-step active"><div class="comp-line"><strong>Scale = 1/√'+CFG.dh+' = '+scale+'</strong></div>';
+        for(let j=0;j<Math.min(4,CFG.seq);j++)d+=`<div class="comp-line comp-terms">Scaled[0][${j}] = ${fmt(hd.sc[0][j])} × ${scale} = ${fmt(hd.scaled[0][j])}</div>`;
+        d+='</div>';cd.innerHTML=d;
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`\\text{Masked}_{ij}=\\begin{cases}\\text{Scaled}_{ij}&j\\leq i\\\\-\\infty&j>i\\end{cases}`);
+        let h='<div style="width:100%">'+htmlHeadSelector(CFG.nqh,selHead,'pickHead');
+        h+=htmlMat(hd.masked.map((r,i)=>r.map((v,j)=>j>i?-9999:v)),'mk-out','Causal Masked [16×16] (−9999 = −∞)');
+        h+='</div>';vc.innerHTML=h;
+        // Show causal mask detail
+        let d='<div class="comp-step active"><div class="comp-line"><strong>Causal Mask — setiap cell [i][j] dimana j>i di-set ke −∞:</strong></div>';
+        for(let i=0;i<CFG.seq;i++){
+            d+=`<div class="comp-line comp-terms">&nbsp;&nbsp;Row ${i}: [`;
+            for(let j=0;j<CFG.seq;j++){d+=(j>i?'<span style="color:var(--red)">−∞</span>':fmt(hd.scaled[i][j]))+(j<CFG.seq-1?', ':'');}
+            d+=']</div>';
+        }
+        d+='</div>';cd.innerHTML=d;
+    } else if(sub===3){
+        fp.innerHTML=texBlock(`\\text{Attn}_{ij}=\\frac{\\exp(s_{ij}-\\max)}{\\sum_k\\exp(s_{ik}-\\max)}`);
+        let h='<div style="width:100%">'+htmlHeadSelector(CFG.nqh,selHead,'pickHead');
+        h+='<div class="selector" style="margin-bottom:4px">';
+        for(let r=0;r<CFG.seq;r++)h+=`<div class="sel-btn${r===selRow?' active':''}" onclick="pickRow(${r})">row ${r}</div>`;
+        h+='</div>';
+        h+=htmlMat(hd.attnW,'aw','Attention Weights [16×16]');
+        h+='</div>';vc.innerHTML=h;
+        // Full softmax for selected row — ALL elements
+        cd.innerHTML=htmlFullSoftmax(hd.masked[selRow],undefined,`Softmax baris ${selRow} (${selRow+1} visible tokens)`);
+    } else {
+        fp.innerHTML=texBlock(`O=\\text{Attn}\\times V \\quad [${CFG.seq}{\\times}${CFG.seq}]\\times[${CFG.seq}{\\times}${CFG.dh}]=[${CFG.seq}{\\times}${CFG.dh}]`);
+        let h='<div style="width:100%">'+htmlHeadSelector(CFG.nqh,selHead,'pickHead');
+        h+='<div class="matrices-row">';
+        h+=htmlMat(hd.attnW,'oa','Attn [16×16]');
+        h+='<div class="op-symbol">×</div>';
+        h+=htmlMat(hd.Vh,'ov',`V_h${hd.kvh} [16×8]`);
+        h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(hd.out,'oo',`Out [16×8]`,{cellSize:8});
+        h+='</div>';
+        if(flashOn)h+=`<div style="margin-top:6px;padding:6px;border:1px dashed var(--purple);border-radius:4px;font-size:.65rem;text-align:center"><strong style="color:var(--purple)">FlashAttention:</strong> Score/Softmax dihitung per-tile di SRAM tanpa menyimpan matriks 16×16 penuh ke HBM.</div>`;
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(hd.attnW[0],getCol(hd.Vh,0),'O[0][0] = weighted sum V');
+    }
+    const explanations=['Score = Q×Kᵀ: seberapa relevan tiap token terhadap yang lain. 8-dim dot product per sel.',
+        'Scale 1/√d_head mencegah dot product terlalu besar → menjaga gradien softmax stabil.',
+        'Causal mask: token hanya "lihat" token sebelumnya (autoregressive). Future positions → −∞ → prob=0.',
+        'Softmax per baris → distribusi probabilitas. Row 0: hanya lihat 1 token. Row 15: lihat semua 16.',
+        'Output = weighted sum Value vectors. Token relevan berkontribusi lebih besar.'];
+    ex.textContent=explanations[sub]||'';
+});
+</script></body></html>

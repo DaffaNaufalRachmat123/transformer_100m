@@ -1,0 +1,19 @@
+{
+  "vocab_size": 65536,
+  "d_model": 576,
+  "n_layers": 13,
+  "n_q_heads": 9,
+  "n_kv_heads": 3,
+  "d_head": 64,
+  "ffn_dim": 2304,
+  "max_seq_len": 2048,
+  "rope_theta": 500000.0,
+  "weight_decay": 0.1,
+  "grad_clip": 0.5,
+  "weight_tying": true,
+  "pad_token_id": 15,
+  "eos_token_id": 4,
+  "bos_token_id": 0,
+  "architecture": "100m_gqa_rope_swiglu",
+  "languages": ["id", "en", "ja", "ko"]
+}

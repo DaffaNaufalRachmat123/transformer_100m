@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 9: SwiGLU FFN</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+let selTok=0;
+function pickTok(i){selTok=i;PAGE.render(PAGE.sub);}
+initStagePage(8,5,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    if(sub===0){
+        fp.innerHTML=texBlock(`\\text{gate}=\\hat{x}\\cdot W_1 \\quad [${CFG.seq}{\\times}${CFG.d}]\\times[${CFG.d}{\\times}${CFG.ffn}]=[${CFG.seq}{\\times}${CFG.ffn}]`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle()+'<div class="matrices-row">';
+        h+=htmlHeatmap(S.norm2,'fg-x','X̂ [16×32]',{cellSize:5});
+        h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(W.W1,'fg-w','W₁ [32×128]',{cellSize:3});
+        h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(S.gate,'fg-g','Gate [16×128]',{cellSize:3});
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(S.norm2[0],getCol(W.W1,0),'Gate[0][0]');
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`\\text{SiLU}(x)=\\frac{x}{1+e^{-x}} \\quad \\text{up}=\\hat{x}\\cdot W_3`);
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        h+='<div class="matrices-row">';
+        h+=htmlMat(S.up,'fu-u','Up [16×128]');
+        h+='<div class="op-symbol">→SiLU→</div>';
+        h+=htmlMat(S.siluUp,'fu-s','SiLU(Up) [16×128]');
+        h+='</div>';
+        h+='</div>';vc.innerHTML=h;
+        // Full SiLU for ALL 128 elements of selected token
+        cd.innerHTML=htmlFullSiLU(S.up[selTok],`SiLU computation token ${selTok} — semua ${CFG.ffn} elemen`);
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`\\text{SwiGLU}=\\text{gate}\\odot\\text{SiLU}(\\text{up})`);
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        h+='<div class="matrices-row">';
+        h+=htmlMat(S.gate,'sw-g','Gate [16×128]');
+        h+='<div class="op-symbol">⊙</div>';
+        h+=htmlMat(S.siluUp,'sw-s','SiLU(Up) [16×128]');
+        h+='<div class="op-symbol">=</div>';
+        h+=htmlMat(S.swiglu,'sw-o','SwiGLU [16×128]');
+        h+='</div></div>';vc.innerHTML=h;
+        // Full element-wise multiply for ALL 128 elements
+        cd.innerHTML=htmlFullElemMul(S.gate[selTok],S.siluUp[selTok],`Gate ⊙ SiLU(Up) — token ${selTok}, semua ${CFG.ffn} elemen`);
+    } else if(sub===3){
+        fp.innerHTML=texBlock(`\\text{down}=\\text{SwiGLU}\\cdot W_2 \\quad [${CFG.seq}{\\times}${CFG.ffn}]\\times[${CFG.ffn}{\\times}${CFG.d}]`);
+        let h='<div style="width:100%"><div class="matrices-row">';
+        h+=htmlHeatmap(S.swiglu,'dw-i','SwiGLU [16×128]',{cellSize:3});
+        h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(W.W2,'dw-w','W₂ [128×32]',{cellSize:3});
+        h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(S.down,'dw-o','Down [16×32]',{cellSize:5});
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(S.swiglu[0],getCol(W.W2,0),'Down[0][0] (128-term dot product!)');
+    } else {
+        fp.innerHTML=texBlock(`x_{out}=x_{mid}+\\text{down}`);
+        let h='<div style="width:100%">'+htmlTokenSelector(selTok,'pickTok');
+        h+=htmlVec(S.res1[selTok],'r2x','X_mid ['+CFG.d+']');
+        h+=`<div style="text-align:center" class="op-symbol">+</div>`;
+        h+=htmlVec(S.down[selTok],'r2d','Down ['+CFG.d+']');
+        h+=`<div style="text-align:center" class="op-symbol">=</div>`;
+        h+=htmlVec(S.res2[selTok],'r2o','X_out ['+CFG.d+']');
+        h+='</div>';vc.innerHTML=h;
+        // Full residual — ALL 32 elements
+        cd.innerHTML=htmlFullResidual(S.res1[selTok],S.down[selTok],`Residual #2 token ${selTok} — semua ${CFG.d} elemen`);
+    }
+    ex.textContent=`SwiGLU FFN: dimensi d=${CFG.d} → expand ${CFG.ffn} (4× via gate+up) → SiLU gating → compress kembali ke ${CFG.d}. Total: 3 matriks × ${CFG.d}×${CFG.ffn} = ${3*CFG.d*CFG.ffn} parameters.`;
+});
+</script></body></html>

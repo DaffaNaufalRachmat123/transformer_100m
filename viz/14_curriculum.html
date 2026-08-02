@@ -1,0 +1,87 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 14: Curriculum Learning</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+const PHASES=[
+    {seq:256,tokens:'497.0M',pct:35,batch:70,languages:{id:0.20,en:0.22,ja:0.26,ko:0.22}},
+    {seq:512,tokens:'568.0M',pct:40,batch:29,languages:{id:0.23,en:0.26,ja:0.24,ko:0.19}},
+    {seq:1024,tokens:'355.0M',pct:25,batch:12,languages:{id:0.26,en:0.29,ja:0.23,ko:0.17}}
+];
+const TOTAL_TOKENS='1.42B';
+const CLI_BATCH=70;
+
+initStagePage(13,4,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+
+    if(sub===0){
+        fp.innerHTML=texBlock(`\\text{3 Phases: }N_{256}{=}497\\text{M} \\to N_{512}{=}568\\text{M} \\to N_{1024}{=}355\\text{M}`);
+        let h=`<div style="width:100%;text-align:center"><div class="mat-label">Curriculum Learning — progres dari kalimat pendek ke panjang</div>`;
+        h+=`<div style="display:flex;justify-content:center;gap:12px;margin:12px 0;flex-wrap:wrap">`;
+        PHASES.forEach((p,i)=>{
+            const w=p.pct;
+            h+=`<div style="border:2px solid var(--cyan);border-radius:8px;padding:12px;min-width:180px;text-align:center;background:${i===0?'var(--panel2)':i===1?'var(--panel2)':'var(--panel2)'}">`;
+            h+=`<div style="font-size:.82rem;font-weight:700;color:var(--cyan);margin-bottom:4px">Phase ${i+1}</div>`;
+            h+=`<div style="font-size:.72rem;margin:2px 0">seq_len = <strong>${p.seq}</strong></div>`;
+            h+=`<div style="font-size:.72rem;margin:2px 0">Tokens = <strong>${p.tokens}</strong> (${p.pct}%)</div>`;
+            h+=`<div style="font-size:.72rem;margin:2px 0">Batch = <strong>${p.batch}</strong></div>`;
+            h+=`<div style="margin-top:6px;background:var(--panel1);border-radius:4px;padding:4px;font-size:.62rem;text-align:left">`;
+            h+=`<div style="color:var(--dim);margin-bottom:2px">Lang weights:</div>`;
+            h+=`<div>ID=<span style="color:${getLangColor('id')}">${p.languages.id}</span> EN=<span style="color:${getLangColor('en')}">${p.languages.en}</span></div>`;
+            h+=`<div>JA=<span style="color:${getLangColor('ja')}">${p.languages.ja}</span> KO=<span style="color:${getLangColor('ko')}">${p.languages.ko}</span></div>`;
+            h+=`</div></div>`;
+        });
+        h+=`</div>`;
+        h+=`<div style="font-size:.68rem;color:var(--dim)">Total: ${TOTAL_TOKENS} token — 3 language-dominated phase + mixed-code proportion</div>`;
+        h+=`</div>`;vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Kurikulum bertahap:</strong> Model mulai dari kalimat pendek (256 token), naik ke medium (512), lalu konteks panjang (1024).</div><div class="comp-line comp-terms">Real: compute_phases() membagi budget 1.42B token jadi ~35%+40%+25%</div></div>`;
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`B_{new}=B_{cli}\\cdot\\frac{256}{S_{new}}\\cdot0.85`);
+        let h=`<div style="width:100%;text-align:center"><div class="mat-label">Auto Batch Size Adjustment</div>`;
+        h+=`<div style="padding:12px;background:var(--panel2);border-radius:6px;max-width:500px;margin:8px auto;font-size:.78rem">`;
+        PHASES.forEach((p,i)=>{
+            h+=`<div style="margin:6px 0;padding:6px;border-left:3px solid var(--cyan)">`;
+            h+=`<div><strong>seq=${p.seq}:</strong> B = ${CLI_BATCH} × (256/${p.seq}) × 0.85 = <span style="color:var(--green)">${p.batch}</span></div>`;
+            h+=`<div style="font-size:.62rem;color:var(--dim)">Diperlukan karena memori attention O(seq²) — batch di-kurangi otomatis supaya tetap fit di VRAM T4 (14.6GB)</div>`;
+            h+=`</div>`;
+        });
+        h+=`</div></div>`;vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>VRAM-safe scaling:</strong> Saat seq_len naik, batch turun — dari 70 (seq=256) ke 12 (seq=1024). Formula dengan 15% safety margin.</div></div>`;
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`\\text{Phase 1 (seq=256): JA 26% > EN 22% = KO 22% > ID 20%}`);
+        drawLangChart(0);
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Phase 1 (seq=256):</strong> Japanese & Korean dibobot lebih tinggi (26%+22%) — coverage karakter CJK dari awal. English 22%, Indonesian 20%.</div></div>`;
+    } else {
+        drawLangWeightsTimeline();
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line"><strong>Pergeseran bobot bahasa per phase:</strong> JA/KO dominan di awal (coverage alphabet non-latin), EN/ID naik di akhir (generalisasi konten lebih panjang).</div><div class="comp-line comp-terms">Real: weighted sampling via lang_sample_weight() × file size, renormalized per phase.</div></div>`;
+    }
+    ex.textContent='Curriculum Learning: 3 fase — seq 256 (497M tok, 35% budget) → 512 (568M, 40%) → 1024 (355M, 25%). Batch auto-scale: B × 256/seq × 0.85. Language weights shift JA/KO-heavy early → EN-heavy later.';
+});
+
+function getLangColor(l){const m={id:'#00ffcc',en:'#ff6600',ja:'#ff0066',ko:'#cc00ff'};return m[l]||'#666';}
+function drawLangChart(idx){
+    const ph=PHASES[idx];
+    const langs=[{n:'ID',w:ph.languages.id,c:'#00ffcc'},{n:'EN',w:ph.languages.en,c:'#ff6600'},{n:'JA',w:ph.languages.ja,c:'#ff0066'},{n:'KO',w:ph.languages.ko,c:'#cc00ff'}];
+    let h=`<div style="width:100%;text-align:center"><div class="mat-label">Language Sampling Weights — Phase ${idx+1} (seq=${ph.seq})</div>`;
+    h+=`<div style="display:flex;max-width:400px;margin:8px auto;height:36px;border-radius:6px;overflow:hidden">`;
+    langs.forEach(l=>h+=`<div style="flex:${l.w};background:${l.c};display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700">${l.n}<br>${(l.w*100).toFixed(0)}%</div>`);
+    h+=`</div></div>`;
+    document.getElementById('viz-content').innerHTML=h;
+}
+function drawLangWeightsTimeline(){
+    let h=`<div style="width:100%;text-align:center"><div class="mat-label">Language Weights Per Phase</div>`;
+    h+=`<div style="max-width:500px;margin:8px auto;overflow-x:auto"><table style="border-collapse:collapse;font-size:.68rem;margin:0 auto">`;
+    h+=`<tr><th style="padding:4px 10px;border:1px solid var(--border)">Language</th>`;
+    PHASES.forEach((p,i)=>h+=`<th style="padding:4px 10px;border:1px solid var(--border)">Phase ${i+1} (seq=${p.seq})</th>`);
+    h+=`</tr>`;
+    ['id','en','ja','ko'].forEach(lng=>{
+        const names={id:'Indonesian',en:'English',ja:'Japanese',ko:'Korean'};
+        h+=`<tr><td style="padding:4px 10px;border:1px solid var(--border);color:${getLangColor(lng)};font-weight:700">${names[lng]}</td>`;
+        PHASES.forEach(p=>h+=`<td style="padding:4px 10px;border:1px solid var(--border)">${(p.languages[lng]*100).toFixed(0)}%</td>`);
+        h+=`</tr>`;
+    });
+    h+=`</table></div></div>`;
+    document.getElementById('viz-content').innerHTML=h;
+}
+</script></body></html>

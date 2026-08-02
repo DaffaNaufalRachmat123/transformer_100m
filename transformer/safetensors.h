@@ -110,6 +110,31 @@ inline uint16_t f32_to_f16(float f) {
     return (uint16_t)(sign | (exp << 10) | mant);
 }
 
+// FP16 → F32 conversion (IEEE 754 half-precision)
+inline float f16_to_f32(uint16_t v) {
+    uint32_t sign     = (v >> 15) & 0x1;
+    uint32_t exponent = (v >> 10) & 0x1F;
+    uint32_t mantissa = v & 0x3FF;
+    if (exponent == 0)
+        return (sign ? -1.0f : 1.0f) * (mantissa / 1024.0f) * 6.103515625e-5f;
+    if (exponent == 31) {
+        uint32_t bits = (sign << 31) | (0xFF << 23) | (mantissa << 13);
+        float f;
+        memcpy(&f, &bits, 4);
+        return f;
+    }
+    uint32_t bits = (sign << 31) | ((exponent - 15 + 127) << 23) | (mantissa << 13);
+    float f;
+    memcpy(&f, &bits, 4);
+    return f;
+}
+
+// Convert array F16→F32
+inline void f16_to_f32_array(const uint16_t* src, float* dst, size_t numel) {
+    for (size_t i = 0; i < numel; ++i)
+        dst[i] = f16_to_f32(src[i]);
+}
+
 // Convert array F32→BF16 into dst (dst must have numel uint16_t)
 inline void f32_to_bf16_array(const float* src, uint16_t* dst, size_t numel) {
     for (size_t i = 0; i < numel; ++i)
@@ -402,6 +427,10 @@ public:
             std::vector<uint16_t> tmp(td.numel());
             f_.read(reinterpret_cast<char*>(tmp.data()), td.byte_size());
             bf16_to_f32_array(tmp.data(), dst, td.numel());
+        } else if (td.dtype == STDtype::F16) {
+            std::vector<uint16_t> tmp(td.numel());
+            f_.read(reinterpret_cast<char*>(tmp.data()), td.byte_size());
+            f16_to_f32_array(tmp.data(), dst, td.numel());
         } else {
             throw std::runtime_error("read_into_f32: unsupported dtype for " + name);
         }

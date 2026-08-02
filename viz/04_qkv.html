@@ -1,0 +1,62 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stage 4: QKV</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script></head><body>
+<div class="substep-dots" id="substep-dots"></div><div id="substep-info" class="substep-info"></div>
+<div id="formula-panel"></div><div id="viz-content"></div><div id="comp-detail"></div><div id="explanation"></div>
+<script src="shared.js"></script><script>
+initState();
+initStagePage(3,4,function(sub){
+    const vc=document.getElementById('viz-content'),cd=document.getElementById('comp-detail'),fp=document.getElementById('formula-panel'),ex=document.getElementById('explanation');
+    const nkvh=gqaOn?CFG.nkvh_gqa:CFG.nkvh_mha,kvDim=nkvh*CFG.dh;
+    const Wk=gqaOn?W.Wk_g:W.Wk_m,Wv=gqaOn?W.Wv_g:W.Wv_m;
+    if(sub===0){
+        fp.innerHTML=texBlock(`Q = \\hat{X} \\cdot W_Q \\quad [${CFG.seq}{\\times}${CFG.d}] \\times [${CFG.d}{\\times}${CFG.d}] = [${CFG.seq}{\\times}${CFG.d}]`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle()+'<div class="matrices-row">';
+        h+=htmlHeatmap(S.norm1,'qx','X̂ [16×32]');
+        h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(W.Wq,'qwq','W_Q [32×32]');
+        h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(S.Q,'qq','Q [16×32]');
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(S.norm1[0],getCol(W.Wq,0),'Q[0][0]');
+        runMatmulAnim('qx','qwq','qq',S.norm1,W.Wq,S.Q,24);
+    } else if(sub===1){
+        fp.innerHTML=texBlock(`K = \\hat{X} \\cdot W_K \\quad [${CFG.seq}{\\times}${CFG.d}] \\times [${CFG.d}{\\times}${kvDim}] = [${CFG.seq}{\\times}${kvDim}]`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle()+'<div class="matrices-row">';
+        h+=htmlHeatmap(S.norm1,'kx','X̂');h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(Wk,'kwk',`W_K [32×${kvDim}]`);h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(S.K,'kk',`K [16×${kvDim}]`);
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(S.norm1[0],getCol(Wk,0),'K[0][0]');
+        runMatmulAnim('kx','kwk','kk',S.norm1,Wk,S.K,16);
+    } else if(sub===2){
+        fp.innerHTML=texBlock(`V = \\hat{X} \\cdot W_V \\quad [${CFG.seq}{\\times}${CFG.d}] \\times [${CFG.d}{\\times}${kvDim}] = [${CFG.seq}{\\times}${kvDim}]`);
+        let h='<div style="width:100%;position:relative">'+htmlViewToggle()+'<div class="matrices-row">';
+        h+=htmlHeatmap(S.norm1,'vx','X̂');h+='<div class="op-symbol">×</div>';
+        h+=htmlHeatmap(Wv,'vwv',`W_V [32×${kvDim}]`);h+='<div class="op-symbol">=</div>';
+        h+=htmlHeatmap(S.V,'vv',`V [16×${kvDim}]`);
+        h+='</div></div>';vc.innerHTML=h;
+        cd.innerHTML=htmlDotProd(S.norm1[0],getCol(Wv,0),'V[0][0]');
+    } else {
+        fp.innerHTML=texBlock(`Q \\to [${CFG.seq},${CFG.nqh},${CFG.dh}] \\quad K,V \\to [${CFG.seq},${nkvh},${CFG.dh}]`);
+        let h='<div style="width:100%"><div style="text-align:center;font-size:.72rem;color:var(--dim);margin-bottom:6px">Reshape ke multi-head format</div>';
+        h+='<div class="matrices-row" style="gap:8px">';
+        for(let hd=0;hd<CFG.nqh;hd++){
+            const Qh=S.Q.map(r=>r.slice(hd*CFG.dh,(hd+1)*CFG.dh));
+            h+=htmlHeatmap(Qh,`qh${hd}`,`Q Head ${hd}`,{cellSize:6});
+        }
+        h+='</div><div class="matrices-row" style="gap:8px;margin-top:6px">';
+        for(let hd=0;hd<nkvh;hd++){
+            const Kh=S.K.map(r=>r.slice(hd*CFG.dh,(hd+1)*CFG.dh));
+            const Vh=S.V.map(r=>r.slice(hd*CFG.dh,(hd+1)*CFG.dh));
+            h+=htmlHeatmap(Kh,`kh${hd}`,`K Head ${hd}`,{cellSize:6});
+            h+=htmlHeatmap(Vh,`vh${hd}`,`V Head ${hd}`,{cellSize:6});
+        }
+        h+='</div>';
+        if(gqaOn)h+=`<div style="text-align:center;margin-top:6px;font-size:.68rem;color:var(--orange)">GQA: ${CFG.nqh} Query heads → ${nkvh} KV heads (hemat ${Math.round((1-nkvh/CFG.nqh)*100)}% KV cache)</div>`;
+        h+='</div>';vc.innerHTML=h;
+        cd.innerHTML=`<div class="comp-step active"><div class="comp-line">Q [16×32] → [16, 4 heads, 8 dim/head]. K,V → [16, ${nkvh} heads, 8 dim/head].</div></div>`;
+    }
+    ex.textContent=`Proyeksi linear Q,K,V. ${gqaOn?'GQA: 4 query heads berbagi 2 KV heads.':'MHA: setiap head punya KV sendiri.'}  Dot product setiap sel = 32 terms.`;
+});
+</script></body></html>
