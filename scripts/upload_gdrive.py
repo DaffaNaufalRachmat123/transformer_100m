@@ -154,8 +154,45 @@ def upload_file_to_drive(service, filepath, folder_id, filename=None):
     print(f"\r[UPLOAD] {fname} [====================] 100% | {size_mb:.0f} MB | {avg_speed:.1f} MB/s | {action} in {total_time:.0f}s ✓{'':20}")
     return file_id, action
 
-def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=False):
-    files = ['ckpt_pretrain.safetensors', 'ckpt_optim.safetensors', 'train_state.txt']
+def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=False, stage="pretrain"):
+    # ─── File list per stage ─────────────────────────────────────────────────
+    _STAGE_STATE_FILE = {
+        "pretrain": "train_state.txt",
+        "sft":      "train_state_sft.txt",
+        "dpo":      "train_state_dpo.txt",
+    }
+    _STAGE_OPTIM_FILE = {
+        "pretrain": "ckpt_optim.safetensors",
+        "sft":      "ckpt_sft_optim.safetensors",
+        "dpo":      "ckpt_dpo_optim.safetensors",
+    }
+
+    state_file = _STAGE_STATE_FILE.get(stage, "train_state.txt")
+    optim_file = _STAGE_OPTIM_FILE.get(stage, "ckpt_optim.safetensors")
+
+    # Read last_ckpt from train_state to find the actual weights file name
+    # (during training it's ckpt_sft_step200.safetensors, at final it's ckpt_sft_final.safetensors)
+    state_path = os.path.join(ckpt_dir, state_file)
+    weights_file = f"ckpt_{stage}.safetensors" if stage == "pretrain" else None
+    if not weights_file and os.path.isfile(state_path):
+        with open(state_path) as f:
+            for line in f:
+                if line.startswith("last_ckpt="):
+                    weights_file = line.split("=", 1)[1].strip()
+                    break
+    if not weights_file:
+        # Fallback: search for latest stage checkpoint
+        import glob
+        pattern = os.path.join(ckpt_dir, f"ckpt_{stage}_*.safetensors")
+        candidates = glob.glob(pattern)
+        if candidates:
+            weights_file = os.path.basename(max(candidates, key=os.path.getmtime))
+        else:
+            weights_file = f"ckpt_{stage}_final.safetensors"
+
+    files = [weights_file, optim_file, state_file]
+    if stage == "pretrain":
+        files = ["ckpt_pretrain.safetensors", "ckpt_optim.safetensors", "train_state.txt"]
 
     # prepare_only is deprecated (kept for CLI compat, does nothing)
     if prepare_only:
@@ -181,12 +218,6 @@ def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=F
     except Exception as e:
         print(f"[UPLOAD] Auth failed: {e}", file=sys.stderr)
         return False
-
-    files = [
-        'ckpt_pretrain.safetensors',
-        'ckpt_optim.safetensors',
-        'train_state.txt',
-    ]
 
     if use_zip:
         # ─── ZIP mode: snapshot to unique temp dir + compress + upload ────
@@ -222,7 +253,7 @@ def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=F
         print(f"\r[UPLOAD] Compress [====================] 100% | {zip_size:.0f} MB in {time.time()-t0:.0f}s ✓{'':30}")
 
         # Upload to GDrive — always overwrite same filename
-        GDRIVE_ZIP_NAME = 'checkpoint_latest.zip'
+        GDRIVE_ZIP_NAME = 'checkpoint_latest.zip' if stage == 'pretrain' else f'checkpoint_{stage}_latest.zip'
         MAX_RETRIES = 2
         for attempt in range(MAX_RETRIES + 1):
             try:
@@ -278,6 +309,8 @@ if __name__ == '__main__':
     p.add_argument('--tokens', type=int, default=0)
     p.add_argument('--folder_id', default=None, help='Override GDRIVE_FOLDER_ID')
     p.add_argument('--zip', action='store_true', help='Compress to zip before upload')
+    p.add_argument('--stage', default='pretrain', choices=['pretrain','sft','dpo'],
+                   help='Stage tag for file selection [pretrain]')
     p.add_argument('--prepare-only', action='store_true', dest='prepare_only',
                    help='Only snapshot+zip, do not upload')
     args = p.parse_args()
@@ -287,5 +320,5 @@ if __name__ == '__main__':
         sys.exit(0)
 
     ok = upload(args.ckpt_dir, args.step, args.tokens, args.folder_id,
-                use_zip=args.zip, prepare_only=args.prepare_only)
+                use_zip=args.zip, prepare_only=args.prepare_only, stage=args.stage)
     sys.exit(0 if ok else 1)

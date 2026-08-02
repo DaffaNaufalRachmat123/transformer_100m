@@ -1,23 +1,24 @@
-# Transformer 100M — CUDA Edition
+# Transformer 204M — CUDA Edition
 
-Standalone CUDA C++ implementation of a 100M parameter quadrilingual transformer.
+Standalone CUDA C++ implementation of a 204M parameter quadrilingual transformer.
 Designed to run on **Kaggle T4 x 2** GPUs.
 
 ## Architecture
 
 | Parameter | Value |
 |-----------|-------|
-| d_model | 576 |
-| Layers | 13 |
-| Query Heads | 9 (GQA) |
-| KV Heads | 3 (3:1 ratio) |
+| d_model | 768 |
+| Layers | 18 |
+| Query Heads | 12 (GQA) |
+| KV Heads | 3 (4:1 ratio) |
 | d_head | 64 |
-| FFN dim | 2304 (SwiGLU) |
+| FFN dim | 3072 (SwiGLU) |
 | Vocab | 65,536 (BPE) |
 | Max seq | 2048 |
-| Languages | ID, EN, JA, KO |
+| Languages | EN, JA |
 | RoPE θ | 500,000 |
 | Weight tying | Yes |
+| Parameters | 204.3M
 
 ## Quick Start (Kaggle)
 
@@ -93,12 +94,12 @@ transformer_100m_cuda/
 
 | Component | Size |
 |-----------|------|
-| Model params (FP16) | ~200 MB |
-| Master weights (FP32) | ~400 MB |
-| Optimizer states (2×FP32) | ~800 MB |
-| Activations (batch=8, seq=256) | ~2 GB |
+| Model params (FP16) | ~409 MB |
+| Master weights (FP32) | ~817 MB |
+| Optimizer states (2×FP32) | ~1,635 MB |
+| Activations (batch=24, seq=256) | ~3 GB |
 | KV cache + workspace | ~1 GB |
-| **Total** | **~4.4 GB** |
+| **Total** | **~6.9 GB** |
 
 Leaves ~11.6 GB headroom per GPU for larger batches or longer sequences.
 
@@ -114,7 +115,7 @@ Leaves ~11.6 GB headroom per GPU for larger batches or longer sequences.
 - All Apple MLX / Metal dependencies removed
 - ARM NEON intrinsics replaced with CUDA kernels
 - IOKit GPU monitoring replaced with NVML
-- Architecture constants fixed to 100M (was 476M in CUDA files)
+- Architecture constants fixed to 204M (was 476M in CUDA files)
 - Proper residual connections in forward pass
 - Cosine LR schedule with warmup
 - Training state save/restore for Kaggle session resumption

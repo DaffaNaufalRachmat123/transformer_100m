@@ -87,13 +87,31 @@ static inline void launch_ce_fwd_bwd(
 // ─── Scale fp16 buffer in place by scalar ───────────────────────────────────
 __global__ void scale_inplace_fp16_kernel(__half* d, float s, size_t n) {
     size_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) d[i] = __float2half(__half2float(d[i]) * s);
+    if (i < n) {
+        float v = __half2float(d[i]);
+        d[i] = __float2half(std::isfinite(v) ? v * s : 0.0f);
+    }
 }
 
 static inline void launch_scale_fp16(__half* d, float s, size_t n, cudaStream_t stream) {
     int block = 256;
     int grid = (int)((n + block - 1) / block);
     scale_inplace_fp16_kernel<<<grid, block, 0, stream>>>(d, s, n);
+}
+
+// ─── Scale f32 buffer in place by scalar ────────────────────────────────────
+__global__ void scale_inplace_f32_kernel(float* d, float s, size_t n) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float v = d[i];
+        d[i] = std::isfinite(v) ? v * s : 0.0f;
+    }
+}
+
+static inline void launch_scale_f32(float* d, float s, size_t n, cudaStream_t stream) {
+    int block = 256;
+    int grid = (int)((n + block - 1) / block);
+    scale_inplace_f32_kernel<<<grid, block, 0, stream>>>(d, s, n);
 }
 
 // ─── Clamp fp16 buffer in place to [-max_val, +max_val] ─────────────────────
@@ -198,4 +216,88 @@ static inline void launch_l2_norm_sq(const __half* d, float* out_sq, size_t n, c
     int block = 256;
     int grid = (int)(((n + block - 1) / block) < 1024 ? (n + block - 1) / block : 1024);
     l2_norm_sq_fp16_kernel<<<grid, block, block * sizeof(float), stream>>>(d, out_sq, n);
+}
+
+// ─── NaN/Inf detection kernels ──────────────────────────────────────────────
+__global__ void count_nan_inf_kernel(const __half* d, unsigned int* nan_cnt,
+                                      unsigned int* inf_cnt, size_t n) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float v = __half2float(d[i]);
+    if (isnan(v)) atomicAdd(nan_cnt, 1);
+    else if (isinf(v)) atomicAdd(inf_cnt, 1);
+}
+
+static inline void launch_count_nan_inf(const __half* d, unsigned int* nan_out,
+                                         unsigned int* inf_out, size_t n,
+                                         cudaStream_t stream) {
+    if (n == 0) return;
+    cudaMemsetAsync(nan_out, 0, sizeof(unsigned int), stream);
+    cudaMemsetAsync(inf_out, 0, sizeof(unsigned int), stream);
+    int block = 256;
+    int grid = (int)((n + block - 1) / block);
+    count_nan_inf_kernel<<<grid, block, 0, stream>>>(d, nan_out, inf_out, n);
+}
+
+// FP32 atomicMin/atomicMax (not natively supported on sm_75; must be defined
+// before min_max_fp16_kernel which calls them).
+__device__ inline void atomicMin_f32(float* addr, float val) {
+    int* iaddr = (int*)addr;
+    int old = *iaddr, assumed;
+    do {
+        assumed = old;
+        float f_old = __int_as_float(assumed);
+        float f_new = fminf(f_old, val);
+        old = atomicCAS(iaddr, assumed, __float_as_int(f_new));
+    } while (old != assumed);
+}
+__device__ inline void atomicMax_f32(float* addr, float val) {
+    int* iaddr = (int*)addr;
+    int old = *iaddr, assumed;
+    do {
+        assumed = old;
+        float f_old = __int_as_float(assumed);
+        float f_new = fmaxf(f_old, val);
+        old = atomicCAS(iaddr, assumed, __float_as_int(f_new));
+    } while (old != assumed);
+}
+
+__global__ void min_max_fp16_kernel(const __half* d, float* min_out,
+                                     float* max_out, size_t n) {
+    extern __shared__ float sm[];
+    float* sm_min = sm;
+    float* sm_max = sm + blockDim.x;
+    int tid = threadIdx.x;
+    float local_min = 1e30f, local_max = -1e30f;
+    for (size_t i = tid; i < n; i += blockDim.x) {
+        float v = __half2float(d[i]);
+        if (v < local_min) local_min = v;
+        if (v > local_max) local_max = v;
+    }
+    sm_min[tid] = local_min; sm_max[tid] = local_max;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            if (sm_min[tid + s] < sm_min[tid]) sm_min[tid] = sm_min[tid + s];
+            if (sm_max[tid + s] > sm_max[tid]) sm_max[tid] = sm_max[tid + s];
+        }
+        __syncthreads();
+    }
+    if (tid == 0) {
+        atomicMin_f32(min_out, sm_min[0]);
+        atomicMax_f32(max_out, sm_max[0]);
+    }
+}
+
+static inline void launch_min_max_fp16(const __half* d, float* min_out,
+                                        float* max_out, size_t n,
+                                        cudaStream_t stream) {
+    if (n == 0) return;
+    float init_min = 1e30f, init_max = -1e30f;
+    cudaMemcpyAsync(min_out, &init_min, sizeof(float), cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(max_out, &init_max, sizeof(float), cudaMemcpyHostToDevice, stream);
+    int block = 256;
+    int grid = (int)((n + block - 1) / block);
+    min_max_fp16_kernel<<<grid, block, block * 2 * sizeof(float), stream>>>(
+        d, min_out, max_out, n);
 }

@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/build_infer/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

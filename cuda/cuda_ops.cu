@@ -251,13 +251,13 @@ void cross_entropy_backward(const CudaTensor& logits, const CudaTensor& targets,
 
 // ─── Embedding ─────────────────────────────────────────────────────────────
 CudaTensor embedding_forward(const CudaTensor& embed, const CudaTensor& token_ids) {
-    int B = 1, S = (int)token_ids.numel(), D = (int)embed.shape[1];
+    int B = 1, S = (int)token_ids.numel(), D = (int)embed.shape[1], V = (int)embed.shape[0];
     if (token_ids.ndim >= 2) { B = (int)token_ids.shape[0]; S = (int)token_ids.shape[1]; }
 
     CudaTensor out({B, S, D}, DType::FP16);
     embedding_gather_forward(
         (const __half*)embed.data, (const int*)token_ids.data,
-        (__half*)out.data, B, S, D, ctx.compute_stream);
+        (__half*)out.data, B, S, D, V, ctx.compute_stream);
     return out;
 }
 

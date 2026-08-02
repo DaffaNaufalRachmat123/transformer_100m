@@ -13,10 +13,20 @@ __device__ inline float warp_reduce_sum(float val) {
     return val;
 }
 
+// Block-wide sum reduction.
+//
+// REQUIRES blockDim.x to be a power of two and >= 64. Both call sites launch
+// with 256 threads (see rms_norm_fused_kernel_forward / _backward below).
+//
+// The tree loop must run down to s == 32 *inclusive* so that exactly 32 live
+// partials remain for the warp-shuffle stage to fold. Using `s > 32` leaves 64
+// live partials while the warp stage only folds shared[0..31], silently
+// discarding shared[32..63] — i.e. half of every reduction. That bug made
+// RMSNorm sum only 384 of 768 dims while still dividing by the full D.
 __device__ inline float block_reduce_sum(float val, float* shared, int tid) {
     shared[tid] = val;
     __syncthreads();
-    for (int s = blockDim.x / 2; s > 32; s >>= 1) {
+    for (int s = blockDim.x / 2; s >= 32; s >>= 1) {
         if (tid < s) shared[tid] += shared[tid + s];
         __syncthreads();
     }
@@ -89,8 +99,13 @@ void rms_norm_fused_kernel_forward(
 
 // =============================================================================
 // RMSNorm Fused — Backward
-// dgamma = sum(dy * normed_x)
-// dx = rsqrt * (dy - normed_x * mean(dy * normed_x)) * gamma
+//   y      = normed * gamma,  normed = x * rsqrt,  rsqrt = 1/sqrt(mean(x^2)+eps)
+//   dgamma = sum_rows(dy * normed)
+//   dx     = rsqrt * (dy*gamma - normed * mean(dy*gamma*normed))
+//
+// NOTE: gamma belongs *inside* the mean-subtraction term. Applying it after
+// the reduction (i.e. rsqrt*(dy - normed*mean(dy*normed))*gamma) is only
+// equivalent when gamma is a uniform scalar, which it is not here.
 // =============================================================================
 __global__ void rms_norm_backward_kernel(
     const __half* __restrict__ dy,
@@ -114,20 +129,21 @@ __global__ void rms_norm_backward_kernel(
     int col = blockIdx.y;
 
     if (col == 0) {
-        // Compute sum(dy * normed_x) for this row
+        // Compute sum(dy * gamma * normed_x) for this row
         float sum_dyn = 0.0f;
         for (int i = tid; i < D; i += blockDim.x) {
-            sum_dyn += __half2float(dy_row[i]) * __half2float(n_row[i]);
+            sum_dyn += __half2float(dy_row[i]) * __half2float(gamma[i])
+                     * __half2float(n_row[i]);
         }
         float total = block_reduce_sum(sum_dyn, shared, tid) / D;
 
         float rsqrt = __half2float(saved_rsqrt[row]);
 
-        // dx = rsqrt * (dy - normed_x * mean) * gamma
+        // dx = rsqrt * (dy*gamma - normed_x * mean(dy*gamma*normed_x))
         for (int i = tid; i < D; i += blockDim.x) {
-            float d = __half2float(dy_row[i]) - __half2float(n_row[i]) * total;
-            float g = __half2float(gamma[i]);
-            dx_row[i] = __float2half(d * rsqrt * g);
+            float dyg = __half2float(dy_row[i]) * __half2float(gamma[i]);
+            float d = dyg - __half2float(n_row[i]) * total;
+            dx_row[i] = __float2half(d * rsqrt);
         }
     } else if (col == 1) {
         // Accumulate dgamma across all rows into an FP32 buffer (sm_75 has no
@@ -503,6 +519,7 @@ __global__ void adamw_fused_kernel(
     if (idx >= n) return;
 
     float g = __half2float(grad[idx]);
+    if (!isfinite(g)) return;   // NaN/Inf gradient: skip this element entirely
     float m_val = m[idx] * beta1 + g * (1.0f - beta1);
     float v_val = v[idx] * beta2 + g * g * (1.0f - beta2);
 
@@ -598,13 +615,14 @@ void elementwise_sqrt_fp16(const __half* in, __half* out, size_t n, cudaStream_t
 }
 
 // =============================================================================
-// Embedding gather
+// Embedding gather (with bounds check)
 // =============================================================================
 __global__ void embedding_gather(const __half* embed, const int* ids,
-                                  __half* out, int N, int D) {
+                                  __half* out, int N, int D, int V) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N) return;
     int token_id = ids[idx];
+    if (token_id < 0 || token_id >= V) token_id = 0;
     const __half* row = embed + token_id * D;
     __half* out_row = out + idx * D;
     for (int d = 0; d < D; d++) {
@@ -614,11 +632,11 @@ __global__ void embedding_gather(const __half* embed, const int* ids,
 
 void embedding_gather_forward(
     const __half* embed, const int* token_ids,
-    __half* out, int B, int S, int D,
+    __half* out, int B, int S, int D, int V,
     cudaStream_t stream)
 {
     int N = B * S;
     int block = 256;
     int grid = (N + block - 1) / block;
-    embedding_gather<<<grid, block, 0, stream>>>(embed, token_ids, out, N, D);
+    embedding_gather<<<grid, block, 0, stream>>>(embed, token_ids, out, N, D, V);
 }

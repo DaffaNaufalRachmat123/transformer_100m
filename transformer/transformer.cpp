@@ -108,7 +108,10 @@ void Transformer::load_safetensors(const std::string& path) {
     SafeTensorsLoader loader(path);
 
     std::cerr << "[Transformer] Loading " << path << "\n";
-    loader.print_info();
+    // print_info() defaults to std::cout, which is the same stream the
+    // generated text is written to. Route it to stderr so stdout carries
+    // ONLY model output — run_eval() in train_cuda.cu parses stdout.
+    loader.print_info(std::cerr);
 
     uint32_t V   = cfg_.vocab_size;
     uint32_t D   = cfg_.d_model;

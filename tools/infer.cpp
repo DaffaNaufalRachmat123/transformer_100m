@@ -20,6 +20,8 @@
 //   --rep_penalty F     repetition penalty >1 reduces repeats (default: 1.3)
 //   --rep_window N      look-back window for rep penalty   (default: 64)
 //   --greedy            greedy decoding (temperature=0, no rep penalty)
+//   --show_probs        show top-k token probabilities at each step
+//   --show_probs_topk N how many top tokens to show          (default: 5)
 //   --system "text"     system prompt for chat mode
 //   --chat_format       auto-wrap prompt in <|system|>...<|user|>...<|assistant|>
 //
@@ -69,7 +71,9 @@ static void print_usage(const char* prog) {
         << "  --top_k N        top-k           (default: 50)\n"
         << "  --rep_penalty F  repetition penalty; >1 penalises repeated tokens (default: 1.3)\n"
         << "  --rep_window N   look-back window for rep penalty (default: 64)\n"
-        << "  --greedy         greedy decoding (disables sampling + rep penalty)\n"
+        << "  --greedy         greedy decoding (temperature=0, rep penalty still applies)\n"
+        << "  --show_probs     show top-k token probabilities at each generation step\n"
+        << "  --show_probs_topk N  how many top tokens to show (default: 5)\n"
         << "\n"
         << "Chat:\n"
         << "  --chat_format    wrap prompt as <|user|>PROMPT<|assistant|>\n"
@@ -97,7 +101,9 @@ static void stream_generate(
         const std::vector<uint32_t>& prompt_ids,
         const Transformer::GenerateConfig& gcfg,
         float rep_penalty  = 1.3f,   // >1 penalises recently-seen tokens
-        int   rep_window   = 64) {   // how many recent tokens to look back
+        int   rep_window   = 64,     // how many recent tokens to look back
+        bool  show_probs   = false,  // print top-k probs at each step
+        int   show_probs_topk = 5) { // how many top tokens to show
 
     model.reset_kv_cache();
 
@@ -121,28 +127,34 @@ static void stream_generate(
     for (int step = 0; step < gcfg.max_new_tokens; ++step) {
         uint32_t next_tok;
 
+        // ── Repetition penalty + hard-block (shared by greedy & sampling) ──
+        std::unordered_map<uint32_t, int> freq;
+        for (uint32_t t : recent) freq[t]++;
 
+        if (rep_penalty > 1.0f) {
+            for (auto& [tok, cnt] : freq) {
+                if (tok < (uint32_t)logits.size()) {
+                    float& l = logits[tok];
+                    float p = rep_penalty + (cnt - 1) * 0.2f;
+                    l = (l > 0) ? l / p : l * p;
+                }
+            }
+        }
+
+        // Hard-block: zero out any non-special token seen >= HARD_BLOCK_N times
+        for (auto& [tok, cnt] : freq) {
+            if (cnt >= HARD_BLOCK_N && tok >= 16 && tok < (uint32_t)logits.size())
+                logits[tok] = -1e30f;
+        }
+        // ALWAYS block the last generated token to force at least some diversity
+        if (!recent.empty() && recent.back() >= 16 && recent.back() < (uint32_t)logits.size())
+            logits[recent.back()] = -1e30f;
 
         if (gcfg.temperature <= 0.0f) {
-            // Greedy
+            // Greedy on penalized logits
             next_tok = (uint32_t)std::distance(
                 logits.begin(), std::max_element(logits.begin(), logits.end()));
         } else {
-            // Count frequencies in recent window
-            std::unordered_map<uint32_t, int> freq;
-            for (uint32_t t : recent) freq[t]++;
-
-            // Apply repetition penalty to logits before softmax
-            if (rep_penalty > 1.0f) {
-                for (auto& [tok, cnt] : freq) {
-                    if (tok < (uint32_t)logits.size()) {
-                        float& l = logits[tok];
-                        float p = rep_penalty + (cnt - 1) * 0.2f;  // stronger for higher freq
-                        l = (l > 0) ? l / p : l * p;
-                    }
-                }
-            }
-
             // Temperature + softmax
             std::vector<float> probs(logits.size());
             float max_l = *std::max_element(logits.begin(), logits.end());
@@ -152,25 +164,63 @@ static void stream_generate(
                 sum += probs[i];
             }
             for (float& p : probs) p /= sum;
-            
 
-    // Hard-block: zero out any non-special token seen >= HARD_BLOCK_N times
-    bool any_blocked = false;
-    for (auto& [tok, cnt] : freq) {
-        if (cnt >= HARD_BLOCK_N && tok >= 16 && tok < (uint32_t)probs.size()) {
-            probs[tok] = 0.0f;
-            any_blocked = true;
-        }
-    }
-    // ALWAYS block the last generated token to force at least some diversity
-    if (!recent.empty() && recent.back() >= 16 && recent.back() < (uint32_t)probs.size()) {
-        probs[recent.back()] = 0.0f;
-        any_blocked = true;
-    }
-    if (any_blocked) {
-        float s = 0; for (float p : probs) s += p;
-        if (s > 1e-8f) for (float& p : probs) p /= s;
-    }
+            // ── Show top-k probabilities (before top-k/top-p filtering) ──
+            if (show_probs && show_probs_topk > 0) {
+                std::vector<std::pair<float,int>> sorted;
+                sorted.reserve(probs.size());
+                for (size_t i = 0; i < probs.size(); ++i)
+                    if (probs[i] > 1e-8f)
+                        sorted.push_back({probs[i], (int)i});
+                std::sort(sorted.begin(), sorted.end(),
+                          [](auto& a, auto& b){ return a.first > b.first; });
+                int n = std::min(show_probs_topk, (int)sorted.size());
+                // Generated tokens are streamed to stdout WITHOUT a trailing
+                // newline (see below), while this line goes to stderr. Under
+                // `2>&1` the two interleave, so without an explicit newline
+                // the probability line gets glued onto the token text and no
+                // longer starts with "    [" — which is exactly the prefix
+                // run_eval() matches on. std::endl also flushes, which is
+                // required because stdout and stderr are separately buffered.
+                std::cout << std::endl;
+                std::cerr << "    [";
+                for (int i = 0; i < n; ++i) {
+                    std::string tok_str = enc.decode({(uint32_t)sorted[i].second}, false);
+                    // Escape newlines and trim whitespace for display
+                    for (auto& c : tok_str) if (c == '\n' || c == '\r') c = ' ';
+                    if (tok_str.size() > 40) tok_str = tok_str.substr(0, 37) + "...";
+                    // Trim leading/trailing spaces
+                    size_t start = tok_str.find_first_not_of(" ");
+                    size_t end   = tok_str.find_last_not_of(" ");
+                    if (start != std::string::npos && end != std::string::npos)
+                        tok_str = tok_str.substr(start, end - start + 1);
+                    if (tok_str.empty()) tok_str = "(space)";
+                    std::cerr << (i>0?", ":"") << tok_str << " "
+                              << std::fixed << std::setprecision(1)
+                              << (sorted[i].first * 100.0f) << "%";
+                }
+                std::cerr << "]\n";
+            }
+
+            // Top-K
+
+            // Hard-block: zero out any non-special token seen >= HARD_BLOCK_N times
+            bool any_blocked = false;
+            for (auto& [tok, cnt] : freq) {
+                if (cnt >= HARD_BLOCK_N && tok >= 16 && tok < (uint32_t)probs.size()) {
+                    probs[tok] = 0.0f;
+                    any_blocked = true;
+                }
+            }
+            // ALWAYS block the last generated token to force at least some diversity
+            if (!recent.empty() && recent.back() >= 16 && recent.back() < (uint32_t)probs.size()) {
+                probs[recent.back()] = 0.0f;
+                any_blocked = true;
+            }
+            if (any_blocked) {
+                float s = 0; for (float p : probs) s += p;
+                if (s > 1e-8f) for (float& p : probs) p /= s;
+            }
 
             // Top-K
             if (gcfg.top_k > 0 && gcfg.top_k < (int)probs.size()) {
@@ -195,8 +245,16 @@ static void stream_generate(
                 std::sort(sp.begin(), sp.end(), [](auto& a, auto& b){ return a.first > b.first; });
                 float cum = 0;
                 for (auto& [p, idx] : sp) {
+                    // Standard nucleus sampling KEEPS the token that crosses
+                    // the threshold; only tokens entirely beyond it are cut.
+                    // The old form (`cum += p; if (cum > top_p) drop`) dropped
+                    // the crossing token too, so a peaked distribution with
+                    // p[0] > top_p had EVERY token zeroed — after which the
+                    // sampler below fell through to probs.size()-1 (token
+                    // 65535). That failure mode gets more likely the better
+                    // the model becomes.
+                    if (cum >= gcfg.top_p) probs[idx] = 0.0f;
                     cum += p;
-                    if (cum > gcfg.top_p) probs[idx] = 0.0f;
                 }
                 float s = 0; for (float p : probs) s += p;
                 if (s > 1e-8f) for (float& p : probs) p /= s;
@@ -204,12 +262,22 @@ static void stream_generate(
 
             // Multinomial sample
             static std::mt19937 rng(std::random_device{}());
-            std::uniform_real_distribution<float> u(0.0f, 1.0f);
-            float r = u(rng), cum = 0.0f;
-            next_tok = (uint32_t)(probs.size() - 1);
-            for (size_t i = 0; i < probs.size(); ++i) {
-                cum += probs[i];
-                if (r <= cum) { next_tok = (uint32_t)i; break; }
+            float total = 0.0f; for (float p : probs) total += p;
+            if (total <= 1e-8f) {
+                // Every candidate was filtered out. Falling through the loop
+                // below would silently yield probs.size()-1 (token 65535 for a
+                // 65536 vocab) — a garbage token that looks like a model bug.
+                // Fall back to greedy on the penalised logits instead.
+                next_tok = (uint32_t)std::distance(
+                    logits.begin(), std::max_element(logits.begin(), logits.end()));
+            } else {
+                std::uniform_real_distribution<float> u(0.0f, 1.0f);
+                float r = u(rng) * total, cum = 0.0f;
+                next_tok = (uint32_t)(probs.size() - 1);
+                for (size_t i = 0; i < probs.size(); ++i) {
+                    cum += probs[i];
+                    if (r <= cum) { next_tok = (uint32_t)i; break; }
+                }
             }
         }
 
@@ -255,6 +323,8 @@ int main(int argc, char** argv) {
     bool show_help     = false;
     float rep_penalty  = 1.3f;
     int   rep_window   = 64;
+    bool  show_probs   = false;
+    int   show_probs_topk = 5;
 
     Transformer::GenerateConfig gcfg;
     gcfg.max_new_tokens = 200;    // default 200; model stops early if it emits <|end|>
@@ -277,7 +347,9 @@ int main(int argc, char** argv) {
         else if (key == "--top_k"       && i+1 < argc) gcfg.top_k          = std::stoi(argv[++i]);
         else if (key == "--rep_penalty" && i+1 < argc) rep_penalty         = std::stof(argv[++i]);
         else if (key == "--rep_window"  && i+1 < argc) rep_window          = std::stoi(argv[++i]);
-        else if (key == "--greedy")   { gcfg.temperature = 0.0f; rep_penalty = 1.0f; }
+        else if (key == "--greedy")   gcfg.temperature = 0.0f;
+        else if (key == "--show_probs")  show_probs = true;
+        else if (key == "--show_probs_topk" && i+1 < argc) show_probs_topk = std::stoi(argv[++i]);
         else if (key == "--chat_format") chat_format = true;
         else if (key == "--stdin")    use_stdin = true;
     }
@@ -334,7 +406,7 @@ int main(int argc, char** argv) {
     // ---- Mode: single --prompt ---------------------------------------------
     if (!prompt_text.empty() && !use_stdin) {
         auto ids = build_prompt_ids(prompt_text);
-        stream_generate(model, enc, ids, gcfg, rep_penalty, rep_window);
+        stream_generate(model, enc, ids, gcfg, rep_penalty, rep_window, show_probs, show_probs_topk);
         return 0;
     }
 
@@ -347,7 +419,7 @@ int main(int argc, char** argv) {
             std::cerr << "[infer] Prompt " << ++idx << ": " << line.substr(0, 60)
                       << (line.size() > 60 ? "..." : "") << "\n";
             auto ids = build_prompt_ids(line);
-            stream_generate(model, enc, ids, gcfg, rep_penalty, rep_window);
+            stream_generate(model, enc, ids, gcfg, rep_penalty, rep_window, show_probs, show_probs_topk);
         }
         return 0;
     }

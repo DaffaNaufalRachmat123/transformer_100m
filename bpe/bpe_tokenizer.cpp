@@ -1306,7 +1306,9 @@ void BPEEncoder::load_text(const std::string& vocab_path, const std::string& mer
             merges_ordered_.push_back({p, im->second});
         }
     }
-    std::cout << "[BPEEncoder] Loaded: " << id_to_token_.size() << " tokens, "
+    // stderr, not stdout: infer streams generated text on stdout and
+    // run_eval() parses that stream.
+    std::cerr << "[BPEEncoder] Loaded: " << id_to_token_.size() << " tokens, "
               << merges_ordered_.size() << " merges\n";
 }
 
@@ -1366,7 +1368,7 @@ bool BPEEncoder::load_binary(const std::string& path) {
         }
     }
 
-    std::cout << "[BPEEncoder] Binary loaded: " << path
+    std::cerr << "[BPEEncoder] Binary loaded: " << path
               << " (vocab=" << vs << " merges=" << merges_ordered_.size() << ")\n";
     return true;
 }

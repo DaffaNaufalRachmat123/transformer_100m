@@ -137,7 +137,7 @@ void PretrainDataset::discover_files() {
     size_t skipped_aliases = 0;
 
     std::vector<std::string> lang_dirs = {
-        "indonesian", "english", "japanese", "korean", "mixed"
+        "indonesian", "english", "japanese", "mixed"
     };
 
     for (const auto& dir_name : lang_dirs) {

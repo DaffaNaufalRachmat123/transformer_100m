@@ -35,7 +35,6 @@ enum class Language : uint8_t {
     Indonesian = 0,
     English,
     Japanese,
-    Korean,
     Mixed,
     Unknown
 };
@@ -44,51 +43,17 @@ inline Language lang_from_dirname(const std::string& name) {
     if (name == "indonesian") return Language::Indonesian;
     if (name == "english")    return Language::English;
     if (name == "japanese")   return Language::Japanese;
-    if (name == "korean")     return Language::Korean;
     if (name == "mixed")      return Language::Mixed;
     return Language::Unknown;
 }
 
-// Per-phase language sampling weights
-// 4-language focus (ID/EN/JA/KO) + Mixed. Code/Math removed.
-// JA/KO weighted higher early for character coverage; EN dominates later.
+// Per-phase language sampling weights (EN+JA bilingual)
+// Single-phase mode: weights are flat — EN slightly higher for data volume.
 inline float lang_sample_weight(Language l, int phase = 0) {
-    if (phase == 0) {
-        switch (l) {
-            case Language::Indonesian: return 0.20f;
-            case Language::English:    return 0.22f;
-            case Language::Japanese:   return 0.26f;
-            case Language::Korean:     return 0.22f;
-            case Language::Mixed:      return 0.10f;
-            default:                   return 0.00f;
-        }
-    }
-    if (phase == 1) {
-        switch (l) {
-            case Language::Indonesian: return 0.23f;
-            case Language::English:    return 0.26f;
-            case Language::Japanese:   return 0.24f;
-            case Language::Korean:     return 0.19f;
-            case Language::Mixed:      return 0.08f;
-            default:                   return 0.00f;
-        }
-    }
-    if (phase == 2) {
-        switch (l) {
-            case Language::Indonesian: return 0.26f;
-            case Language::English:    return 0.29f;
-            case Language::Japanese:   return 0.23f;
-            case Language::Korean:     return 0.17f;
-            case Language::Mixed:      return 0.05f;
-            default:                   return 0.00f;
-        }
-    }
+    (void)phase;  // single-phase, no curriculum
     switch (l) {
-        case Language::Indonesian: return 0.28f;
-        case Language::English:    return 0.31f;
-        case Language::Japanese:   return 0.20f;
-        case Language::Korean:     return 0.16f;
-        case Language::Mixed:      return 0.05f;
+        case Language::English:    return 0.55f;
+        case Language::Japanese:   return 0.45f;
         default:                   return 0.00f;
     }
 }

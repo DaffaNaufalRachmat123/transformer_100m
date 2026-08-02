@@ -1,0 +1,9 @@
+tokens_processed=382464000
+step=24900
+phase=0
+ema_loss=3.8117
+ema_local_min=11.1
+lr_decay_factor=1
+safety_mode=light
+lr=0.00015
+grad_clip=0.2

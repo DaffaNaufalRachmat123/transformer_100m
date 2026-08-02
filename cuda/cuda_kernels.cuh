@@ -91,11 +91,11 @@ void adafactor_fused_update_2d(
     cudaStream_t stream);
 
 // ─── Embedding gather ──────────────────────────────────────────────────────
-// out[i] = embed[token_ids[i]]
+// out[i] = embed[clamp(token_ids[i], 0, V-1)]
 // Launch: block=(256), grid=((B*S + 255)/256)
 void embedding_gather_forward(
     const __half* embed, const int* token_ids,
-    __half* out, int B, int S, int D,
+    __half* out, int B, int S, int D, int V,
     cudaStream_t stream);
 
 // ─── Type conversion ───────────────────────────────────────────────────────

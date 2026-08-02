@@ -76,7 +76,13 @@ public:
             if (p) { data = p; from_pool = true; return; }
         }
         // Fallback to cudaMalloc
-        cudaMalloc(&data, bytes);
+        cudaError_t err = cudaMalloc(&data, bytes);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[FATAL] cudaMalloc(%zu bytes) failed: %s\n",
+                    bytes, cudaGetErrorString(err));
+            data = nullptr;
+            nbytes = 0;
+        }
         from_pool = false;
     }
 

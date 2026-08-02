@@ -1,12 +1,12 @@
 // =============================================================================
-// train_cuda_unified.cu — SFT / DPO / Phone Training (CUDA, 100M Model)
+// train_cuda_unified.cu — SFT / DPO / Phone Training (CUDA, 204M Model)
 //
 // Single binary, stage selected via --stage flag:
 //   --stage 2  = SFT (Supervised Fine-Tuning)
 //   --stage 3  = DPO (Direct Preference Optimization)
 //   --stage 4  = Phone Adapter
 //
-// Architecture: 100M (D=576, L=13, QH=9, KVH=3, DH=64, FFN=2304)
+// Architecture: 204M (D=768, L=18, QH=12, KVH=3, DH=64, FFN=3072)
 // Target: Kaggle T4 x2 (sm_75, FP16)
 //
 // This file uses the SAME correct forward/backward as pretraining:
@@ -50,13 +50,13 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
-// ─── Architecture constants (100M model) ───────────────────────────────────
-static constexpr int D_MODEL    = 576;
-static constexpr int N_LAYERS   = 13;
-static constexpr int N_Q_HEADS  = 9;
+// ─── Architecture constants (204M model — matches pretrain) ────────────────
+static constexpr int D_MODEL    = 768;
+static constexpr int N_LAYERS   = 18;
+static constexpr int N_Q_HEADS  = 12;
 static constexpr int N_KV_HEADS = 3;
 static constexpr int D_HEAD     = 64;
-static constexpr int FFN_DIM    = 2304;
+static constexpr int FFN_DIM    = 3072;
 static constexpr int MODEL_VOCAB = 65536;
 static constexpr float ROPE_THETA = 500000.0f;
 
@@ -184,10 +184,20 @@ std::vector<SFTSample> load_sft_data(const std::string& dir, BPEEncoder& tok, in
         std::string line;
         while (std::getline(f, line)) {
             auto text_pos = line.find("\"text\":\"");
-            if (text_pos == std::string::npos) continue;
-            auto text_start = text_pos + 8;
-            auto text_end = line.rfind("\"");
-            if (text_end <= text_start) continue;
+            if (text_pos == std::string::npos) {
+                // Try with space: "text": "
+                auto alt_pos = line.find("\"text\": \"");
+                if (alt_pos == std::string::npos) continue;
+                text_pos = alt_pos;
+            }
+            auto text_start = (line[text_pos + 7] == ' ') ? text_pos + 9 : text_pos + 8;
+            // Find the closing quote by scanning forward from text_start
+            auto text_end = text_start;
+            while (text_end < line.size() && line[text_end] != '"') {
+                if (line[text_end] == '\\' && text_end + 1 < line.size()) text_end++;
+                text_end++;
+            }
+            if (text_end >= line.size()) continue;
             std::string text = line.substr(text_start, text_end - text_start);
 
             auto ids = tok.encode(text, true, true);
@@ -197,12 +207,17 @@ std::vector<SFTSample> load_sft_data(const std::string& dir, BPEEncoder& tok, in
             s.tokens = std::vector<int>(ids.begin(), ids.end());
             s.loss_mask.resize(s.tokens.size(), 0.0f);
 
-            // Mask: only compute loss on assistant responses
+            // Mask: only compute loss on assistant response tokens.
+            // Mask <|assistant|> so model learns to predict the first response token.
+            // Mask <|end|> so model learns when to stop generating.
             bool in_assistant = false;
             for (size_t i = 0; i < s.tokens.size(); i++) {
                 if (s.tokens[i] == TOK_ASSISTANT) in_assistant = true;
-                else if (s.tokens[i] == TOK_END) in_assistant = false;
-                if (in_assistant) s.loss_mask[i] = 1.0f;
+                else if (s.tokens[i] == TOK_END) {
+                    if (in_assistant) s.loss_mask[i] = 1.0f;
+                    in_assistant = false;
+                }
+                if (in_assistant && s.tokens[i] != TOK_ASSISTANT) s.loss_mask[i] = 1.0f;
             }
             samples.push_back(std::move(s));
         }
@@ -510,7 +525,7 @@ int main(int argc, char** argv) {
 #endif
 
     const char* stage_names[] = {"", "", "SFT", "DPO", "Phone"};
-    printf("\n[Stage %d: %s] 100M model | FP16 | batch=%d | seq=%d | lr=%.1e%s\n",
+    printf("\n[Stage %d: %s] 204M model | FP16 | batch=%d | seq=%d | lr=%.1e%s\n",
            g_stage, stage_names[g_stage], g_batch_size, g_max_seq, g_lr,
            g_use_ddp ? " | DDP x2" : "");
 
@@ -532,6 +547,32 @@ int main(int argc, char** argv) {
         master_params.push_back(cuda::astype(p, cuda::DType::F32));
         opt_m.push_back(cuda::zeros_like(cuda::CudaTensor(p.shape_vec(), cuda::DType::F32)));
         opt_v.push_back(cuda::zeros_like(cuda::CudaTensor(p.shape_vec(), cuda::DType::F32)));
+    }
+
+    // ─── Init untrained special-token embeddings from trained ones ────────
+    // Tokens 1,2,3,15 were never seen during pretraining — their embeddings
+    // are close to random init. Copy BOS(0) → SYSTEM(1), USER(2), ASSISTANT(3)
+    // and EOS(4) → PAD(15) so SFT doesn't start from untrained embeddings.
+    // NOTE: This is a temporary workaround until pretraining is re-run with
+    // chat data mixed in via data/corpus_final/mixed/.
+    {
+        auto copy_embed_row = [&](int dst_id, int src_id) {
+            size_t row_bytes = (size_t)D_MODEL * sizeof(__half);
+            cudaMemcpy((__half*)params[0].data + (size_t)dst_id * D_MODEL,
+                       (const __half*)params[0].data + (size_t)src_id * D_MODEL,
+                       row_bytes, cudaMemcpyDeviceToDevice);
+            size_t f32_row_bytes = (size_t)D_MODEL * sizeof(float);
+            cudaMemcpy((float*)master_params[0].data + (size_t)dst_id * D_MODEL,
+                       (const float*)master_params[0].data + (size_t)src_id * D_MODEL,
+                       f32_row_bytes, cudaMemcpyDeviceToDevice);
+        };
+        copy_embed_row(TOK_SYSTEM,    TOK_BOS);
+        copy_embed_row(TOK_USER,      TOK_BOS);
+        copy_embed_row(TOK_ASSISTANT, TOK_BOS);
+        copy_embed_row(TOK_PAD,       TOK_EOS);
+        printf("[INIT] Copied BOS(0) embedding → SYSTEM(%d) USER(%d) ASSISTANT(%d)\n",
+               TOK_SYSTEM, TOK_USER, TOK_ASSISTANT);
+        printf("[INIT] Copied EOS(4) embedding → PAD(%d)\n", TOK_PAD);
     }
 
     // RoPE tables

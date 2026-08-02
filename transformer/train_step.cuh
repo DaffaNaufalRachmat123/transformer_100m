@@ -18,6 +18,39 @@ namespace ts {
 using cuda::CudaTensor;
 using cuda::DType;
 
+// ─── CUDA error check macro ────────────────────────────────────────────────
+#define CUDA_CHK(msg) do { \
+    cudaError_t _e = cudaGetLastError(); \
+    if (_e != cudaSuccess) \
+        printf("[CUDA-ERR] %s: %s\n", msg, cudaGetErrorString(_e)); \
+} while(0)
+
+// ─── Forward NaN debug (active for first N steps) ───────────────────────────
+static int g_debug_fwd_count = 3;
+static inline bool check_fwd_nan(const CudaTensor& t, const char* label,
+                                  int layer, const char* loc) {
+    if (g_debug_fwd_count <= 0) return false;
+    size_t n = t.numel();
+    if (n == 0) return false;
+    unsigned int *d_nan = nullptr, *d_inf = nullptr;
+    cudaMalloc(&d_nan, sizeof(unsigned int));
+    cudaMalloc(&d_inf, sizeof(unsigned int));
+    launch_count_nan_inf((const __half*)t.data, d_nan, d_inf, n,
+                         cuda::ctx.compute_stream);
+    cuda::sync_compute();
+    unsigned int h_nan, h_inf;
+    cudaMemcpy(&h_nan, d_nan, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_inf, d_inf, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    cudaFree(d_nan); cudaFree(d_inf);
+    if (h_nan > 0 || h_inf > 0) {
+        printf("[FWD-NAN] L%d %s: NaN=%u Inf=%u\n", layer, loc, h_nan, h_inf);
+        g_debug_fwd_count = 0;
+        return true;
+    }
+    if (layer < 0) g_debug_fwd_count--;
+    return false;
+}
+
 struct ModelDims {
     int B, S, D, L, HQ, HKV, DH, FFN, V;
     float rope_theta;
@@ -69,6 +102,8 @@ static inline CudaTensor forward(
     float attn_scale = 1.0f / sqrtf((float)DH);
 
     cache.embed_out = cuda::embedding_forward(params[0], d_tokens); // [B,S,D]
+    CUDA_CHK("embed_fwd");
+    check_fwd_nan(cache.embed_out, "embed", -1, "embed_out");
 
     // running residual stream (owned)
     CudaTensor x(cache.embed_out.shape_vec(), DType::FP16);
@@ -86,6 +121,7 @@ static inline CudaTensor forward(
 
         // --- attention ---
         lc.n1 = cuda::rms_norm(x, params[base+7], 1e-6f, lc.rsqrt_a, lc.normed_a); // [B,S,D]
+        check_fwd_nan(lc.n1, "rms_attn", l, "n1");
         CudaTensor n1_2d = view_as(lc.n1, {(int64_t)B*S, D});
         auto Qf = cuda::matmul(n1_2d, params[base+0]);        // [B*S, D]
         auto Kf = cuda::matmul(n1_2d, params[base+1]);        // [B*S, HKV*DH]
@@ -108,18 +144,22 @@ static inline CudaTensor forward(
         launch_gqa_attn_fwd((const __half*)lc.Q.data,(const __half*)lc.K.data,(const __half*)lc.V.data,
                             (__half*)attn4.data,(float*)lc.LSE.data,
                             B,S,HQ,HKV,DH,attn_scale,cuda::ctx.compute_stream);
+        if (l == 0) CUDA_CHK("attn_fwd");
         lc.attn = view_as(attn4, {(int64_t)B*S, D});
         lc.attn = std::move(attn4); lc.attn.ndim=2; lc.attn.shape[0]=B*S; lc.attn.shape[1]=D; lc.attn.shape[2]=1; lc.attn.shape[3]=1;
 
         auto o = cuda::matmul(lc.attn, params[base+3]);       // [B*S, D]
+        check_fwd_nan(o, "attn_out", l, "o");
         // x_mid = x + o
         cuda::CudaTensor x_mid(x.shape_vec(), DType::FP16);
         elementwise_add_fp16((__half*)x.data,(__half*)o.data,(__half*)x_mid.data,x.numel(),cuda::ctx.compute_stream);
+        check_fwd_nan(x_mid, "resid1", l, "x_mid");
         lc.x_mid = CudaTensor(x_mid.shape_vec(), DType::FP16);
         cudaMemcpyAsync(lc.x_mid.data, x_mid.data, x_mid.nbytes, cudaMemcpyDeviceToDevice, cuda::ctx.compute_stream);
 
         // --- ffn ---
         lc.n2 = cuda::rms_norm(x_mid, params[base+8], 1e-6f, lc.rsqrt_f, lc.normed_f);
+        check_fwd_nan(lc.n2, "rms_ffn", l, "n2");
         CudaTensor n2_2d = view_as(lc.n2, {(int64_t)B*S, D});
         auto gate = cuda::matmul(n2_2d, params[base+4]);      // [B*S, FFN]
         auto up   = cuda::matmul(n2_2d, params[base+6]);      // [B*S, FFN]
@@ -127,15 +167,18 @@ static inline CudaTensor forward(
         lc.up   = std::move(up);   lc.up.ndim=3;   lc.up.shape[0]=B;   lc.up.shape[1]=S;   lc.up.shape[2]=FFN;
 
         lc.ff = cuda::swiglu(lc.gate, lc.up, lc.silu);        // [B,S,FFN]
+        check_fwd_nan(lc.ff, "swiglu", l, "ff");
         CudaTensor ff_2d = view_as(lc.ff, {(int64_t)B*S, FFN});
         auto down = cuda::matmul(ff_2d, params[base+5]);      // [B*S, D]
 
         // x = x_mid + down
         elementwise_add_fp16((__half*)x_mid.data,(__half*)down.data,(__half*)x.data,x.numel(),cuda::ctx.compute_stream);
+        check_fwd_nan(x, "resid2", l, "x");
     }
 
     // final norm
     cache.x_final = cuda::rms_norm(x, params[1+m.L*9], 1e-6f, cache.rsqrt_final, cache.normed_final);
+    check_fwd_nan(cache.x_final, "final_rms", -2, "x_final");
     // return a non-owning view; cache retains ownership (needed for weight-tie grad)
     return view_as(cache.x_final, {(int64_t)B*S, D});
 }

@@ -47,13 +47,13 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
-// ─── Architecture constants (100M model) ───────────────────────────────────
-static constexpr int D_MODEL    = 576;
-static constexpr int N_LAYERS   = 13;
-static constexpr int N_Q_HEADS  = 9;
+// ─── Architecture constants (204M model — EN+JA translation) ────────────────
+static constexpr int D_MODEL    = 768;
+static constexpr int N_LAYERS   = 18;
+static constexpr int N_Q_HEADS  = 12;
 static constexpr int N_KV_HEADS = 3;
 static constexpr int D_HEAD     = D_MODEL / N_Q_HEADS;  // 64
-static constexpr int FFN_DIM    = 2304;
+static constexpr int FFN_DIM    = 3072;
 static constexpr int MODEL_VOCAB = 65536;
 static constexpr float ROPE_THETA = 500000.0f;
 
@@ -79,7 +79,21 @@ static int  g_num_gpus              = 0;    // 0 = auto-detect
 // the LR is simply too high for this region of the data at this context
 // length, not a single-batch spike event. The auto-decay mechanism below
 // (Fix 3) provides an additional safety net for any remaining drift.
-static float g_lr          = 1.5e-4f;
+// ─── Safety mode ───────────────────────────────────────────────────────────
+enum class SafetyMode { Legacy, Light, Adaptive };
+static SafetyMode g_safety = SafetyMode::Light;
+static const char* safety_mode_name(SafetyMode m) {
+    if (m == SafetyMode::Legacy) return "legacy";
+    if (m == SafetyMode::Adaptive) return "adaptive";
+    return "light";
+}
+
+// ─── Learning rate ─────────────────────────────────────────────────────────
+// Light mode default: 3e-4 (same as the 731M-token run that produced good
+// results). Legacy mode: 1.5e-4 (was tightened after observing drift in the
+// 256→512 phase transition with the old codebase).
+// NOTE: both can be overridden with --lr.
+static float g_lr          = 3e-4f;
 static float g_beta1       = 0.9f;
 static float g_beta2       = 0.95f;
 static float g_eps         = 1e-8f;
@@ -88,21 +102,36 @@ static float g_wd          = 0.1f;
 // letting occasional bad batches (e.g. corrupted-tokenization tails from
 // long JA/KO lines) push large updates through before being caught.
 static float g_grad_clip   = 0.5f;
-static float g_loss_scale  = 1.0f;   // FP16 loss scaling (e.g. 1024)
+// FP16 loss scaling. d_logits is scaled by (g_loss_scale / tok_count) and
+// stored as FP16, so the effective survival threshold for a softmax entry is
+//     p > 5.96e-8 * tok_count / g_loss_scale      (5.96e-8 = min FP16 subnormal)
+// With the old default of 1.0 and B=35,S=256 (tok_count=8960) that threshold is
+// p > 5.3e-4, while the median softmax probability for a 65536-vocab model is
+// ~4.5e-6 — i.e. ~99.6% of the gradient silently flushes to zero. Default is
+// therefore 4096, which puts the threshold at ~1.3e-7 and preserves the signal.
+// Do not lower this without re-deriving the bound above.
+static float g_loss_scale  = 4096.0f;
 
 // ─── Checkpoint config ─────────────────────────────────────────────────────
 static int g_save_every    = 500;
 static int g_log_every     = 10;
-static bool g_overwrite_ckpt = true;  // Kaggle mode: single ckpt overwritten
+static bool g_overwrite_ckpt = true;  // always overwrite checkpoint
 static int g_upload_every  = 0;      // 0 = disabled; N = upload ckpt to GDrive every N steps
 static int g_upload_prep_ahead = 20; // prepare zip N steps before upload_every
 static std::string g_upload_script = ""; // path to upload script
 static int g_debug_steps   = 0;      // 0 = disabled; N = dump diag every N steps
 
+// ─── Eval-during-training config ────────────────────────────────────────────
+static uint64_t g_eval_every_tokens = 0;       // 0=disabled; run inference every N tokens
+static std::string g_eval_infer_bin = "./build_infer/infer";  // path to infer binary
+static uint64_t g_next_eval_tokens  = 0;       // next milestone for eval
+
 // ─── Global state ──────────────────────────────────────────────────────────
 static volatile bool g_stop_requested = false;
 static uint64_t g_tokens_processed = 0;
 static int g_current_phase = 0;
+static float gnorm_ema           = 0.0f;
+static float lr_adaptive_factor  = 1.0f;
 
 void signal_handler(int) { g_stop_requested = true; }
 
@@ -174,24 +203,11 @@ struct PhaseConfig {
 };
 
 static std::vector<PhaseConfig> compute_phases(uint64_t total_tokens) {
-    std::vector<PhaseConfig> phases;
-    // Plan B: 3 phases only (no seq=2048), optimized for translation use case
-    // Phase 1: seq=256  ~35% of budget (basic token learning)
-    // Phase 2: seq=512  ~40% of budget (paragraph coherence)
-    // Phase 3: seq=1024 ~25% of budget (long context, multiturn)
-    uint64_t p1 = total_tokens * 35 / 100;
-    uint64_t p2 = total_tokens * 40 / 100;
-    uint64_t p3 = total_tokens - p1 - p2;
-
-    int seqs[] = {256, 512, 1024};
-    uint64_t toks[] = {p1, p2, p3};
-    for (int i = 0; i < 3; i++) {
-        if (toks[i] >= 1536)
-            phases.push_back({seqs[i], toks[i]});
-    }
-    if (phases.empty())
-        phases.push_back({256, total_tokens});
-    return phases;
+    // Single-phase mode: train at the user-specified --max_seq only.
+    // No curriculum transitions — the model gets full budget at one seq_len.
+    // This is ideal for small models (100M) where long-context curriculum
+    // adds complexity without proportional benefit.
+    return {{g_max_seq, total_tokens}};
 }
 
 uint64_t get_seq_len_for_tokens(uint64_t processed, const std::vector<PhaseConfig>& phases) {
@@ -211,17 +227,177 @@ static float cosine_lr(int step, int warmup, float max_lr, float min_lr, int tot
     return min_lr + 0.5f * (max_lr - min_lr) * (1.0f + cosf(M_PI * progress));
 }
 
-// ─── Checkpoint save (overwrite mode for Kaggle) ───────────────────────────
+// ─── Forward declarations ──────────────────────────────────────────────────
 void save_checkpoint(const std::string& dir,
                      const std::vector<cuda::CudaTensor>& params,
                      const std::vector<cuda::CudaTensor>& optimizer_m,
                      const std::vector<cuda::CudaTensor>& optimizer_v,
                      uint64_t tokens_done, int step,
                      float ema_loss_val, float ema_local_min_val, float lr_decay_val,
-                     const std::string& suffix = "") {
+                     const std::string& suffix = "");
+
+// ─── Eval-during-training: save ckpt to temp dir, run infer, print output ──
+void run_eval(const std::string& ckpt_dir,
+              const std::vector<cuda::CudaTensor>& params,
+              const std::vector<cuda::CudaTensor>& optimizer_m,
+              const std::vector<cuda::CudaTensor>& optimizer_v,
+              uint64_t tokens_done, int step,
+              float ema_loss_val, float ema_local_min_val, float lr_decay_val,
+              float loss_val, float lr_val, float gnorm_val,
+              int seq_len, int phase) {
+    // Check if infer binary exists
+    if (!fs::exists(g_eval_infer_bin)) {
+        printf("\n");
+        printf("╔══════════════════════════════════════════════════════════════════╗\n");
+        printf("║  [EVAL] @ %s tokens | step=%d | phase=%d | seq=%d              ║\n",
+               fmt_tok(tokens_done).c_str(), step, phase + 1, seq_len);
+        printf("║  loss=%.4f  ema=%.4f  gnorm=%.2f  lr=%.2e  decay=%.2f       ║\n",
+               loss_val, ema_loss_val, gnorm_val, lr_val, lr_decay_val);
+        printf("║  [SKIP] infer binary not found: %s                             ║\n",
+               g_eval_infer_bin.c_str());
+        printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+        return;
+    }
+
+    // Save to a TEMP directory so the main checkpoint dir is untouched
+    std::string tmp_dir = ckpt_dir + "/eval_tmp";
+    fs::create_directories(tmp_dir);
+
+    // Save model weights only (no optimizer, no train_state) to temp dir
+    save_checkpoint(tmp_dir, params, optimizer_m, optimizer_v,
+                    tokens_done, step, ema_loss_val, ema_local_min_val, lr_decay_val,
+                    "");  // no suffix → saves as ckpt_pretrain.safetensors in tmp_dir
+
+    // Write a temp config.json for the infer binary
+    std::string cfg_path = tmp_dir + "/config_eval.json";
+    {
+        std::ofstream cf(cfg_path);
+        cf << "{\n";
+        cf << "  \"vocab_size\": " << MODEL_VOCAB << ",\n";
+        cf << "  \"d_model\": " << D_MODEL << ",\n";
+        cf << "  \"n_layers\": " << N_LAYERS << ",\n";
+        cf << "  \"n_q_heads\": " << N_Q_HEADS << ",\n";
+        cf << "  \"n_kv_heads\": " << N_KV_HEADS << ",\n";
+        cf << "  \"d_head\": " << D_HEAD << ",\n";
+        cf << "  \"ffn_dim\": " << FFN_DIM << ",\n";
+        cf << "  \"max_seq_len\": 2048,\n";
+        cf << "  \"rope_theta\": 500000.0,\n";
+        cf << "  \"weight_tying\": true,\n";
+        cf << "  \"pad_token_id\": 15,\n";
+        cf << "  \"eos_token_id\": 4,\n";
+        cf << "  \"bos_token_id\": 0\n";
+        cf << "}\n";
+        cf.close();
+    }
+
+    std::string model_path = tmp_dir + "/ckpt_pretrain.safetensors";
+    std::string vocab_path = g_vocab_dir;
+
+    // Test prompts (EN + JA only, factual NTP)
+    const char* prompts[] = {
+        "The capital of Japan is",
+        "the chemical formula of water is",
+        "the largest planet in the solar system is",
+        "the currency of the United States is",
+        "the color of the sky is",
+        "日本の首都は",
+        "地球の衛星は",
+        "水の化学式は",
+        "日本の通貨は",
+        "人間の足の数は",
+    };
+    const char* labels[] = {"EN","EN","EN","EN","EN","JA","JA","JA","JA","JA"};
+
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  [EVAL] @ %s tokens | step=%d | phase=%d | seq=%d              ║\n",
+           fmt_tok(tokens_done).c_str(), step, phase + 1, seq_len);
+    printf("║  loss=%.4f  ema=%.4f  gnorm=%.2f  lr=%.2e  decay=%.2f       ║\n",
+           loss_val, ema_loss_val, gnorm_val, lr_val, lr_decay_val);
+    printf("║  perplexity = e^%.4f = %.1f                                     ║\n",
+           loss_val, expf(loss_val));
+    printf("╠══════════════════════════════════════════════════════════════════╣\n");
+
+    for (int i = 0; i < 10; i++) {
+        std::string cmd = g_eval_infer_bin
+            + " --model " + model_path
+            + " --config " + cfg_path
+            + " --vocab " + vocab_path
+            + " --prompt \"" + prompts[i] + "\""
+            + " --max_tokens 8 --temperature 0.8 --top_p 0.9 --rep_penalty 1.3"
+            + " --show_probs --show_probs_topk 3"
+            + " 2>&1";
+
+        FILE* pipe = popen(cmd.c_str(), "r");
+        std::string generated;
+        std::vector<std::string> prob_lines;
+        if (pipe) {
+            char buf[1024];
+            while (fgets(buf, sizeof(buf), pipe)) {
+                std::string line(buf);
+                // Probability lines from --show_probs (stderr, captured via 2>&1).
+                // This MUST be checked BEFORE the metadata filter below: that
+                // filter drops any line starting with two spaces, which would
+                // otherwise swallow every "    [" probability line.
+                if (line.rfind("    [", 0) == 0) {
+                    prob_lines.push_back(line);
+                    continue;
+                }
+                // Skip metadata/log lines
+                if (line.empty() || line[0] == '[' ||
+                    (line.size() >= 2 && line[0] == ' ' && line[1] == ' ') ||
+                    line.rfind("SafeTensors:", 0) == 0 ||
+                    line.rfind("TOTAL:", 0) == 0)
+                    continue;
+                generated += line;
+            }
+            (void)pclose(pipe);
+        }
+        // Trim whitespace
+        while (!generated.empty() && (generated[0] == '\n' || generated[0] == '\r'))
+            generated.erase(0, 1);
+        while (!generated.empty() && (generated.back() == '\n' || generated.back() == '\r'))
+            generated.pop_back();
+
+        printf("║  [%s] %s\n", labels[i], prompts[i]);
+        printf("║  → %s\n", generated.empty() ? "(no output)" : generated.c_str());
+        if (!prob_lines.empty()) {
+            printf("║  Top tokens:\n");
+            for (size_t p = 0; p < prob_lines.size() && p < 4; p++) {
+                // Strip leading spaces and newline
+                std::string pl = prob_lines[p];
+                while (!pl.empty() && (pl[0] == ' ' || pl[0] == '\n' || pl[0] == '\r'))
+                    pl.erase(0, 1);
+                while (!pl.empty() && (pl.back() == '\n' || pl.back() == '\r'))
+                    pl.pop_back();
+                printf("║    %s\n", pl.c_str());
+            }
+            if (prob_lines.size() > 4)
+                printf("║    ... (%zu more steps)\n", prob_lines.size() - 4);
+        }
+        printf("║\n");
+    }
+
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+
+    // Clean up temp directory
+    try { fs::remove_all(tmp_dir); }
+    catch (...) { /* best effort */ }
+}
+
+// ─── Checkpoint save (overwrite mode) ──────────────────────────────────────
+void save_checkpoint(const std::string& dir,
+                     const std::vector<cuda::CudaTensor>& params,
+                     const std::vector<cuda::CudaTensor>& optimizer_m,
+                     const std::vector<cuda::CudaTensor>& optimizer_v,
+                     uint64_t tokens_done, int step,
+                     float ema_loss_val, float ema_local_min_val, float lr_decay_val,
+                     const std::string& suffix) {
     fs::create_directories(dir);
 
     std::string model_path = dir + "/ckpt_pretrain" + suffix + ".safetensors";
+    std::string optim_path = dir + "/ckpt_optim"  + suffix + ".safetensors";
+    std::string state_path = dir + "/train_state.txt";
     SafeTensorsWriter w;
 
     // IMPORTANT: SafeTensorsWriter stores only POINTERS to the tensor data and
@@ -268,19 +444,24 @@ void save_checkpoint(const std::string& dir,
     w.finalize(model_path);
 
     // Save training state
-    std::string state_path = dir + "/train_state.txt";
-    std::ofstream sf(state_path);
-    sf << "tokens_processed=" << tokens_done << "\n";
-    sf << "step=" << step << "\n";
-    sf << "phase=" << g_current_phase << "\n";
-    sf << "ema_loss=" << ema_loss_val << "\n";
-    sf << "ema_local_min=" << ema_local_min_val << "\n";
-    sf << "lr_decay_factor=" << lr_decay_val << "\n";
-    sf.close();
+    {
+        std::ofstream sf(state_path);
+        sf << "tokens_processed=" << tokens_done << "\n";
+        sf << "step=" << step << "\n";
+        sf << "phase=" << g_current_phase << "\n";
+        sf << "ema_loss=" << ema_loss_val << "\n";
+        sf << "ema_local_min=" << ema_local_min_val << "\n";
+        sf << "lr_decay_factor=" << lr_decay_val << "\n";
+        sf << "safety_mode=" << safety_mode_name(g_safety) << "\n";
+        sf << "lr=" << g_lr << "\n";
+        sf << "grad_clip=" << g_grad_clip << "\n";
+        sf << "gnorm_ema=" << gnorm_ema << "\n";
+        sf << "lr_adaptive_factor=" << lr_adaptive_factor << "\n";
+        sf.close();
+    }
 
     // ─── Save optimizer states (FP32: m, v, master) ────────────────────────
     {
-        std::string optim_path = dir + "/ckpt_optim" + suffix + ".safetensors";
         SafeTensorsWriter ow;
         std::vector<std::vector<float>> optim_bufs;
         optim_bufs.reserve(params.size() * 3);
@@ -414,14 +595,9 @@ std::vector<cuda::CudaTensor> init_params() {
     return p;
 }
 
-// ─── Checkpoint frequency (adaptive) ──────────────────────────────────────
-bool should_checkpoint(uint64_t tokens, int step) {
-    if (g_overwrite_ckpt) return (step % g_save_every == 0) && step > 0;
-    uint64_t interval;
-    if (g_max_seq <= 256)      interval = 2'000'000;
-    else if (g_max_seq <= 512) interval = 1'000'000;
-    else                       interval = 500'000;
-    return (tokens % interval < (uint64_t)g_batch_size * g_max_seq);
+// ─── Checkpoint frequency ──────────────────────────────────────────────────
+bool should_checkpoint(int step) {
+    return (step % g_save_every == 0) && step > 0;
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
@@ -440,6 +616,14 @@ int main(int argc, char** argv) {
         else if (arg == "--batch_size" && i+1 < argc) g_batch_size = std::stoi(argv[++i]);
         else if (arg == "--max_seq" && i+1 < argc)    g_max_seq = std::stoi(argv[++i]);
         else if (arg == "--lr" && i+1 < argc)         g_lr = std::stof(argv[++i]);
+        else if (arg == "--grad_clip" && i+1 < argc) g_grad_clip = std::stof(argv[++i]);
+        else if (arg == "--safety" && i+1 < argc) {
+            std::string sm = argv[++i];
+            if (sm == "legacy")      g_safety = SafetyMode::Legacy;
+            else if (sm == "light")  g_safety = SafetyMode::Light;
+            else if (sm == "adaptive") g_safety = SafetyMode::Adaptive;
+            else { fprintf(stderr, "[ERR] --safety must be 'legacy', 'light', or 'adaptive'\n"); return 1; }
+        }
         else if (arg == "--save_every" && i+1 < argc) g_save_every = std::stoi(argv[++i]);
         else if (arg == "--log_every" && i+1 < argc)  g_log_every = std::stoi(argv[++i]);
         else if (arg == "--loss_scale" && i+1 < argc) g_loss_scale = std::stof(argv[++i]);
@@ -447,6 +631,8 @@ int main(int argc, char** argv) {
         else if (arg == "--upload_prep_ahead" && i+1 < argc) g_upload_prep_ahead = std::stoi(argv[++i]);
         else if (arg == "--upload_script" && i+1 < argc) g_upload_script = argv[++i];
         else if (arg == "--debug_steps" && i+1 < argc) g_debug_steps = std::stoi(argv[++i]);
+        else if (arg == "--eval_every_tokens" && i+1 < argc) g_eval_every_tokens = std::stoull(argv[++i]);
+        else if (arg == "--eval_infer_bin" && i+1 < argc)   g_eval_infer_bin = argv[++i];
         else if (arg == "--resume")                   g_resume = true;
         else if (arg == "--ddp")                      g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)   g_num_gpus = std::stoi(argv[++i]);
@@ -459,8 +645,15 @@ int main(int argc, char** argv) {
             printf("  --max_tokens <N>          Token budget [9B]\n");
             printf("  --batch_size <N>          Batch size per GPU [8]\n");
             printf("  --max_seq <N>             Initial max seq length [256]\n");
-            printf("  --lr <float>              Peak learning rate [3e-4]\n");
+            printf("  --lr <float>              Peak learning rate [3e-4 light / 1.5e-4 legacy]\n");
+            printf("  --grad_clip <float>        Gradient clipping threshold [0.5]\n");
+            printf("  --loss_scale <float>      FP16 loss scale [4096] (do not set below ~1024)\n");
+            printf("  --safety <mode>           Safety: 'light', 'legacy', or 'adaptive' [light]\n");
+            printf("    light  — no auto-decay, soft phase cooldown, resume-safe\n");
+            printf("    legacy — full auto-decay + aggressive cooldown (original)\n");
             printf("  --save_every <N>          Checkpoint every N steps [500]\n");
+            printf("  --eval_every_tokens <N>   Run inference eval every N tokens [0=off]\n");
+            printf("  --eval_infer_bin <PATH>   Path to infer binary [./build_infer/infer]\n");
             printf("  --log_every <N>           Log every N steps [10]\n");
             printf("  --resume                  Resume from checkpoint\n");
             printf("  --ddp                     Enable multi-GPU DDP (NCCL)\n");
@@ -515,7 +708,22 @@ int main(int argc, char** argv) {
            g_use_ddp ? "T4 x2 (DDP)" : "Single T4   ");
     printf("║  Tokens: %-10s | Batch: %-3d | Seq: %-4d            ║\n",
            fmt_tok(g_max_tokens).c_str(), g_batch_size, g_max_seq);
+printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
+           safety_mode_name(g_safety), g_lr);
+    printf("║  Grad clip: %-5.1f                                       ║\n",
+           g_grad_clip);
+    if (g_eval_every_tokens > 0)
+        printf("║  Eval: every %s tokens                                  ║\n",
+               fmt_tok(g_eval_every_tokens).c_str());
     printf("╚══════════════════════════════════════════════════════════╝\n\n");
+
+    // Init eval milestone
+    if (g_eval_every_tokens > 0) {
+        g_next_eval_tokens = g_eval_every_tokens;
+        // If resuming past a milestone, skip to next one
+        while (g_next_eval_tokens <= g_tokens_processed)
+            g_next_eval_tokens += g_eval_every_tokens;
+    }
 
     // ─── Load tokenizer ────────────────────────────────────────────────────
     BPEEncoder tok;
@@ -563,19 +771,42 @@ int main(int argc, char** argv) {
     static constexpr float kEmaBeta = 0.95f;
     float last_grad_norm = 0.0f;
 
+    // ─── Cross-platform resume: detect LR/clip changes, trigger warmup ────
+    float saved_lr = g_lr;           // default: same as current
+    float saved_grad_clip = g_grad_clip;
+    bool lr_changed = false;
+    bool clip_changed = false;
+
     float ema_local_min = 11.1f;    // running local minimum of EMA
     float lr_decay_factor = 1.0f;   // LR multiplier (1.0 = no decay)
+    int steps_since_last_decay_trigger = 0;
+    bool last_decay_was_recovery = false;
+
+    // ─── GLALR: gnorm-loss adaptive LR (adaptive mode only) ─────────────────
+    static constexpr float kGnormEmaBeta       = 0.95f;
+    static constexpr float kGnormEmaThreshold  = 5.0f;
+    static constexpr int   kGnormHighSteps     = 10;
+    static constexpr int   kGnormRecoverySteps = 50;
+    static constexpr float kLrAdaptiveDecay    = 0.5f;
+    static constexpr float kLrAdaptiveFloor    = 0.2f;
+    // gnorm_ema & lr_adaptive_factor are file-scope (persist across ckpt)
+    int   gnorm_high_cnt     = 0;
+    int   gnorm_stable_cnt   = 0;
+    std::vector<float> loss_history;
+    int   loss_history_idx = 0;
+
+    // ─── Phase cooldown config (mode-dependent) ──────────────────────────────
+    // Light mode: softer cooldown, shorter ramp — designed for frequent resume
+    // Legacy mode: aggressive cooldown — original behaviour
+    const int   kPhaseWarmupSteps   = (g_safety == SafetyMode::Legacy) ? 200 : 100;
+    const float kPhaseCooldownFloor = (g_safety == SafetyMode::Legacy) ? 0.3f : 0.5f;
+    // Auto-decay constants (used only in legacy mode)
     static constexpr float kAutoDecayThreshold  = 0.08f;
     static constexpr float kAutoDecayFactor     = 0.7f;
     static constexpr float kMinLrDecayFactor    = 0.2f;
     static constexpr int   kAutoDecayCheckEvery  = 20;
     static constexpr float kRecoveryTolerance   = 0.02f;
     static constexpr int   kRecoveryStableSteps  = 100;
-    int steps_since_last_decay_trigger = 0;
-    bool last_decay_was_recovery = false;
-
-    static constexpr int kPhaseWarmupSteps = 200;
-    static constexpr float kPhaseCooldownFloor = 0.3f;
     int phase_switch_step = 0;    // set after resume block
 
     // ─── Resume checkpoint ─────────────────────────────────────────────────
@@ -662,19 +893,69 @@ int main(int argc, char** argv) {
                 std::ifstream sf(state_path);
                 std::string line;
                 while (std::getline(sf, line)) {
+                    auto parse_ull = [&](const char* field, size_t off) {
+                        try { return std::stoull(line.substr(off)); }
+                        catch (const std::exception& e) {
+                            printf("[RESUME-ERR] stoull('%s') failed: %s — line='%s'\n",
+                                   line.substr(off).c_str(), e.what(), line.c_str());
+                            throw;
+                        }
+                    };
+                    auto parse_int = [&](const char* field, size_t off) {
+                        try { return std::stoi(line.substr(off)); }
+                        catch (const std::exception& e) {
+                            printf("[RESUME-ERR] stoi('%s') failed: %s — line='%s'\n",
+                                   line.substr(off).c_str(), e.what(), line.c_str());
+                            throw;
+                        }
+                    };
+                    auto parse_flt = [&](const char* field, size_t off) {
+                        try { return std::stof(line.substr(off)); }
+                        catch (const std::exception& e) {
+                            printf("[RESUME-ERR] stof('%s') failed: %s — line='%s'\n",
+                                   line.substr(off).c_str(), e.what(), line.c_str());
+                            throw;
+                        }
+                    };
                     if (line.find("tokens_processed=") == 0)
-                        g_tokens_processed = std::stoull(line.substr(17));
+                        g_tokens_processed = parse_ull("tokens_processed", 17);
                     else if (line.find("step=") == 0)
-                        start_step = std::stoi(line.substr(5));
+                        start_step = parse_int("step", 5);
                     else if (line.find("phase=") == 0)
-                        g_current_phase = std::stoi(line.substr(6));
-                    else if (line.find("lr_decay_factor=") == 0)
-                        lr_decay_factor = std::stof(line.substr(16));
-                    else if (line.find("ema_local_min=") == 0)
-                        ema_local_min = std::stof(line.substr(14));
+                        g_current_phase = parse_int("phase", 6);
+                    else if (line.find("lr_decay_factor=") == 0) {
+                        lr_decay_factor = parse_flt("lr_decay_factor", 16);
+                        if (!std::isfinite(lr_decay_factor))
+                            lr_decay_factor = 1.0f;
+                        if (g_safety == SafetyMode::Light)
+                            lr_decay_factor = 1.0f;
+                    }
+                    else if (line.find("ema_local_min=") == 0) {
+                        ema_local_min = parse_flt("ema_local_min", 14);
+                        if (std::isnan(ema_local_min) || std::isinf(ema_local_min))
+                            ema_local_min = 11.1f;
+                    }
                     else if (line.find("ema_loss=") == 0) {
-                        ema_loss = std::stof(line.substr(9));
-                        ema_initialized = true;
+                        ema_loss = parse_flt("ema_loss", 9);
+                        ema_initialized = !std::isnan(ema_loss) && !std::isinf(ema_loss);
+                        if (!ema_initialized)
+                            printf("[RESUME] EMA was NaN/Inf — reinitializing\n");
+                    }
+                    else if (line.find("lr=") == 0) {
+                        saved_lr = parse_flt("lr", 3);
+                        if (!std::isfinite(saved_lr)) saved_lr = g_lr;
+                    }
+                    else if (line.find("grad_clip=") == 0) {
+                        saved_grad_clip = parse_flt("grad_clip", 10);
+                        if (!std::isfinite(saved_grad_clip)) saved_grad_clip = g_grad_clip;
+                    }
+                    else if (line.find("gnorm_ema=") == 0) {
+                        gnorm_ema = parse_flt("gnorm_ema", 10);
+                        if (!std::isfinite(gnorm_ema)) gnorm_ema = 0.0f;
+                    }
+                    else if (line.find("lr_adaptive_factor=") == 0) {
+                        lr_adaptive_factor = parse_flt("lr_adaptive_factor", 19);
+                        if (!std::isfinite(lr_adaptive_factor)) lr_adaptive_factor = 1.0f;
                     }
                 }
             }
@@ -684,7 +965,29 @@ int main(int argc, char** argv) {
             // the checkpoint was saved (e.g. if the optimizer state is from
             // a slightly different data pipeline), and easing back in is
             // safer than a cold jump to the full cosine-scheduled LR.
-            phase_switch_step = start_step;
+            // NOTE: Legacy mode only. Light mode skips this because it
+            // assumes the user knows what they're doing with frequent resumes.
+            if (g_safety == SafetyMode::Legacy)
+                phase_switch_step = start_step;
+            else
+                phase_switch_step = start_step - 1'000'000;  // sentinel, no trigger
+
+            // ─── Cross-platform resume: detect LR/clip changes ────────────
+            lr_changed = (std::abs(g_lr - saved_lr) / std::max(saved_lr, 1e-8f) > 0.01f);
+            clip_changed = (std::abs(g_grad_clip - saved_grad_clip) > 0.01f);
+            if (lr_changed || clip_changed) {
+                phase_switch_step = start_step;  // enable warmup ramp
+                printf("[RESUME] Platform change detected:\n");
+                if (lr_changed)
+                    printf("  LR: %.1e → %.1e (%.1f%% change)\n",
+                           saved_lr, g_lr, 100.0f * (g_lr - saved_lr) / saved_lr);
+                if (clip_changed)
+                    printf("  Grad clip: %.1f → %.1f\n", saved_grad_clip, g_grad_clip);
+                printf("  Warmup enabled for %d steps to adapt optimizer state.\n",
+                       kPhaseWarmupSteps);
+                if (lr_changed && g_lr > saved_lr * 1.5f)
+                    printf("  [WARN] LR increased >50%% — monitor gnorm for spikes.\n");
+            }
             printf("[RESUME] Restored at step=%d, tokens=%s\n",
                    start_step, fmt_tok(g_tokens_processed).c_str());
         } else {
@@ -729,7 +1032,7 @@ int main(int argc, char** argv) {
     // ─── Estimate total steps for LR schedule ──────────────────────────────
     const int cli_batch_size = g_batch_size;  // remember original for VRAM auto-scaling
     int est_total_steps = (int)(g_max_tokens / (g_batch_size * g_max_seq));
-    int warmup_steps = std::min(1000, est_total_steps / 20);
+    int warmup_steps = std::min(2000, est_total_steps / 10);
     float min_lr = g_lr * 0.1f;
 
     // ─── Training loop ──────────────────────────────────────────────────────
@@ -862,6 +1165,9 @@ int main(int argc, char** argv) {
         // the spike-detector above). Applied *after* the phase-cooldown ramp
         // so the two mechanisms compose cleanly.
         lr *= lr_decay_factor;
+        // GLALR: adaptive LR gating (adaptive mode only)
+        if (g_safety == SafetyMode::Adaptive)
+            lr *= lr_adaptive_factor;
 
         // ─── FORWARD PASS (correct GQA attention + stored activations) ─────
         dims.B = B; dims.S = S;
@@ -886,7 +1192,7 @@ int main(int argc, char** argv) {
                     + " --tokens " + std::to_string(g_tokens_processed)
                     + " --zip";
                 printf("[OOM] Running: %s\n", cmd.c_str());
-                system(cmd.c_str());
+                (void)system(cmd.c_str());
                 printf("[OOM] Exiting to prevent further damage.\n");
 #ifdef USE_DDP
                 if (g_use_ddp) cuda::ddp::shutdown();
@@ -935,6 +1241,11 @@ int main(int argc, char** argv) {
                    step, loss_val, ema_loss, loss_val / ema_loss);
             skip_this_step = true;
         }
+        // NaN/Inf loss: corrupted forward pass — skip entire step
+        if (std::isnan(loss_val) || std::isinf(loss_val)) {
+            printf("[NAN/INF] loss=%.4f at step %d — skipping optimizer\n", loss_val, step);
+            skip_this_step = true;
+        }
         // Fold the loss into the EMA baseline. Normal steps use the fast
         // beta so the baseline tracks real progress. Detected spikes use a
         // much slower beta (trickle) so a single bad batch doesn't drag the
@@ -943,22 +1254,24 @@ int main(int argc, char** argv) {
         // instead of skipping every step forever.
         if (!skip_this_step)
             ema_loss = kEmaBeta * ema_loss + (1.0f - kEmaBeta) * loss_val;
-        else
+        else if (!std::isnan(loss_val) && !std::isinf(loss_val))
             ema_loss = 0.999f * ema_loss + 0.001f * loss_val;
+        // NaN/Inf loss: leave EMA unchanged to avoid permanent NaN corruption
 
-        // ─── AUTO-DECAY/RECOVERY: drift-based LR gating ─────────────────────
+        // ─── AUTO-DECAY/RECOVERY: drift-based LR gating (LEGACY ONLY) ─────────
+        // Light mode: skip entirely. The auto-decay ratchet was the primary
+        // cause of LR degradation across sessions. Light mode relies on
+        // spike detection + gradient clipping for safety, which is sufficient
+        // for a 100M model with AdamW and frequent checkpoints.
+        //
+        // Legacy mode: full auto-decay as originally implemented.
         // The spike-detector above only catches instantaneous jumps. Slow
         // drift (EMA rising ~1-2% per logging interval, sustained for 50+
         // steps) sneaks past it because the baseline itself drifts up with
         // the trend. This block samples EMA periodically and gates the LR
         // via a multiplicative factor that decays when drift is detected
         // and slowly recovers when the EMA proves stable.
-        //
-        // Design trade-off: single-ratchet decay (no bounce-back without
-        // observation) + slow 1-level-at-a-time recovery after a proven
-        // stable window. This caps the downside while letting the model
-        // return to full LR when it can handle it.
-        {
+        if (g_safety == SafetyMode::Legacy) {
             ema_local_min = std::min(ema_local_min, ema_loss);
             if (!skip_this_step)
                 steps_since_last_decay_trigger++;
@@ -1077,7 +1390,72 @@ int main(int argc, char** argv) {
 
             float global_norm = sqrtf(h_norm_sq);
             last_grad_norm = global_norm;  // for logging
-            if (global_norm > g_grad_clip) {
+
+            // ─── GLALR: gnorm-loss adaptive LR (adaptive mode only) ─────────
+            if (g_safety == SafetyMode::Adaptive) {
+                // Update gnorm EMA
+                if (gnorm_ema == 0.0f) gnorm_ema = global_norm;
+                else gnorm_ema = kGnormEmaBeta * gnorm_ema
+                               + (1.0f - kGnormEmaBeta) * global_norm;
+
+                // Update loss history (circular buffer)
+                if ((int)loss_history.size() < kGnormRecoverySteps)
+                    loss_history.resize(kGnormRecoverySteps);
+                loss_history[loss_history_idx % kGnormRecoverySteps] = ema_loss;
+                loss_history_idx++;
+
+                // Check: sustained gnorm elevation + loss rising
+                if (gnorm_ema > kGnormEmaThreshold) {
+                    gnorm_high_cnt++;
+                    gnorm_stable_cnt = 0;
+                } else {
+                    gnorm_high_cnt = 0;
+                    gnorm_stable_cnt++;
+                }
+
+                // Reduce: gnorm sustained high + loss is rising
+                if (gnorm_high_cnt >= kGnormHighSteps
+                    && loss_history_idx >= kGnormHighSteps) {
+                    int prev_idx = (loss_history_idx - kGnormHighSteps)
+                                   % kGnormRecoverySteps;
+                    if (ema_loss > loss_history[prev_idx] * 1.02f) {
+                        float old_factor = lr_adaptive_factor;
+                        lr_adaptive_factor = std::max(kLrAdaptiveFloor,
+                            lr_adaptive_factor * kLrAdaptiveDecay);
+                        printf("[GLALR] REDUCE: gnorm_ema=%.1f > %.1f for %d steps, "
+                               "loss ↑ %.1f%% → lr_adaptive %.2f→%.2f\n",
+                               gnorm_ema, kGnormEmaThreshold, kGnormHighSteps,
+                               100.0f*(ema_loss/loss_history[prev_idx] - 1.0f),
+                               old_factor, lr_adaptive_factor);
+                        gnorm_high_cnt = 0;
+                    }
+                }
+
+                // Restore: gnorm stable + loss not rising
+                if (gnorm_stable_cnt >= kGnormRecoverySteps
+                    && lr_adaptive_factor < 1.0f
+                    && loss_history_idx >= kGnormRecoverySteps) {
+                    int prev_idx = (loss_history_idx - kGnormRecoverySteps)
+                                   % kGnormRecoverySteps;
+                    if (ema_loss <= loss_history[prev_idx]) {
+                        float old_factor = lr_adaptive_factor;
+                        lr_adaptive_factor = std::min(1.0f,
+                            lr_adaptive_factor / kLrAdaptiveDecay);
+                        printf("[GLALR] RESTORE: gnorm stable for %d steps, loss ↓ "
+                               "→ lr_adaptive %.2f→%.2f\n",
+                               kGnormRecoverySteps, old_factor, lr_adaptive_factor);
+                        gnorm_stable_cnt = 0;
+                    }
+                }
+            }
+            // ─── END GLALR ──────────────────────────────────────────────────
+            // NaN/Inf gradient norm: corrupted gradients — skip clipping+optimizer
+            if (!std::isfinite(global_norm)) {
+                printf("[NAN/INF] gnorm=%.2f at step %d — skipping clipping+optimizer\n",
+                       global_norm, step);
+                skip_this_step = true;
+            }
+            if (!skip_this_step && global_norm > g_grad_clip) {
                 float clip_coeff = g_grad_clip / (global_norm + 1e-6f);
                 launch_scale_fp16((__half*)grads.d_embed.data, clip_coeff, grads.d_embed.numel(), cuda::ctx.compute_stream);
                 launch_scale_fp16((__half*)grads.d_final_rms.data, clip_coeff, grads.d_final_rms.numel(), cuda::ctx.compute_stream);
@@ -1097,6 +1475,7 @@ int main(int argc, char** argv) {
         }
 
         // ─── OPTIMIZER STEP ────────────────────────────────────────────────
+        if (!skip_this_step) {
         cuda::adamw_step(params[0], master_params[0], adamw_m[0], adamw_v[0],
                          grads.d_embed, lr, g_beta1, g_beta2, g_eps, g_wd, step + 1);
 
@@ -1118,6 +1497,7 @@ int main(int argc, char** argv) {
         cuda::adamw_step(params[frms_idx], master_params[frms_idx],
                          adamw_m[frms_idx], adamw_v[frms_idx],
                          grads.d_final_rms, lr, g_beta1, g_beta2, g_eps, 0.0f, step + 1);
+        } // end if (!skip_this_step) optimizer guard
 
         } // end if (!skip_this_step)
 
@@ -1129,6 +1509,22 @@ int main(int argc, char** argv) {
 #endif
         g_tokens_processed += (uint64_t)(B * S * effective_world);
         step++;
+
+        // ─── EVAL MILESTONE CHECK ──────────────────────────────────────────
+        if (g_eval_every_tokens > 0 && g_tokens_processed >= g_next_eval_tokens) {
+#ifdef USE_DDP
+            if (!g_use_ddp || cuda::ddp::is_main())
+#endif
+            {
+                run_eval(g_checkpoint_dir, params, adamw_m, adamw_v,
+                         g_tokens_processed, step,
+                         ema_loss, ema_local_min, lr_decay_factor,
+                         running_loss / std::max(running_count, 1),
+                         lr, last_grad_norm, S, g_current_phase);
+            }
+            g_next_eval_tokens = ((g_tokens_processed / g_eval_every_tokens) + 1)
+                                 * g_eval_every_tokens;
+        }
 
         // ─── LOGGING ─────────────────────────────────────────────────────
         if (step % g_log_every == 0) {
@@ -1181,7 +1577,7 @@ int main(int argc, char** argv) {
         }
 
         // ─── CHECKPOINT ──────────────────────────────────────────────────
-        if (should_checkpoint(g_tokens_processed, step)) {
+        if (should_checkpoint(step)) {
 #ifdef USE_DDP
             if (!g_use_ddp || cuda::ddp::is_main())
 #endif
@@ -1204,7 +1600,7 @@ int main(int argc, char** argv) {
                     + " --zip"
                     + " &";  // async — ~70s total, won't block training
                 printf("[UPLOAD] Triggering upload (step=%d)...\n", step);
-                system(cmd.c_str());
+                (void)system(cmd.c_str());
 #ifdef USE_DDP
                 }
 #endif
@@ -1222,6 +1618,20 @@ int main(int argc, char** argv) {
     printf("\n[DONE] Training complete. %s tokens in %d steps.\n",
            fmt_tok(g_tokens_processed).c_str(), step);
     cuda::arena.print_stats();
+
+    // ─── Final upload to Google Drive ─────────────────────────────────────
+    {
+        std::string script = g_upload_script.empty()
+            ? "python3 scripts/upload_gdrive.py"
+            : g_upload_script;
+        std::string cmd = script
+            + " --ckpt_dir " + g_checkpoint_dir
+            + " --step " + std::to_string(step)
+            + " --tokens " + std::to_string(g_tokens_processed)
+            + " --stage pretrain --zip";
+        printf("[UPLOAD] Final upload...\n");
+        (void)system(cmd.c_str());
+    }
 
     cudaFree(d_norm_sq);
 #ifdef USE_DDP
