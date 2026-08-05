@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 // =============================================================================
 
 PretrainDataset::PretrainDataset(const PretrainDatasetConfig& cfg)
-    : cfg_(cfg), rng_(cfg.seed)
+    : cfg_(cfg), rng_(cfg.seed), mix_rng_(cfg.seed ^ 0x9E3779B97F4A7C15ULL)
 {
     if (cfg_.curriculum.empty())
         throw std::invalid_argument("PretrainDataset: curriculum is empty");
@@ -57,6 +57,11 @@ bool PretrainDataset::advance_curriculum() {
     // Drop shards produced with the previous seq_len (they have a different
     // sample stride and must not be mixed into the new stage).
     active_shards_.clear();
+    // Restart the staggered-admission fan-out for the new seq_len, otherwise
+    // the next fill admits every shard with steady-state jitter and can land
+    // them back in lockstep.
+    initial_fill_done_ = false;
+    admitted_count_    = 0;
     leftover_shard_.reset();
     leftover_pos_ = 0;
     // Refresh language sampling weights for the new phase
@@ -70,6 +75,19 @@ bool PretrainDataset::next_batch(uint32_t* tokens_out, uint32_t n_samples) {
     // round-robin one sample from each, so a single batch contains a MIX of
     // languages/domains. This removes the single-language-per-batch behaviour
     // that made the loss oscillate on shard boundaries.
+    //
+    // STAGGERED RETIREMENT: admitting every shard at pos=0 means they all
+    // drain at the same rate and therefore all expire in the same window, so
+    // the batch composition flips wholesale every shard-lifetime (measured:
+    // a periodic 0.5-nat EMA step every 683 steps at batch=24/seq=256). To
+    // break that synchronisation each shard is admitted at a non-zero start
+    // offset — evenly spread across the first fill, then randomly jittered
+    // afterwards — so shards retire a few at a time instead of together.
+    //
+    // Skipping those leading samples is harmless: load_shard() already seeks
+    // to a random byte offset in a random file and shuffles within the shard,
+    // so no sample is privileged. The tokens_consumed_ counter only advances
+    // for samples actually emitted, so the token budget stays exact.
     uint32_t filled = 0;
 
     auto refill_active = [&]() {
@@ -91,8 +109,26 @@ bool PretrainDataset::next_batch(uint32_t* tokens_out, uint32_t n_samples) {
                 ready_shards_.pop_front();
                 ring_cv_not_full_.notify_one();
             }
-            if (shard && shard->n_samples > 0 && shard->seq_len == cfg_.seq_len)
-                active_shards_.push_back({shard, 0});
+            if (shard && shard->n_samples > 0 && shard->seq_len == cfg_.seq_len) {
+                uint32_t start_pos = 0;
+                if (!initial_fill_done_) {
+                    // First fill: fan the shards out evenly over their lifetime
+                    // so the very first retirement wave is already staggered.
+                    // Shard i starts (i / kMixShards) of the way through.
+                    start_pos = (uint32_t)(((uint64_t)shard->n_samples *
+                                            admitted_count_) / kMixShards);
+                } else {
+                    // Steady state: jitter within the first 25% so repeated
+                    // replacements never drift back into lockstep.
+                    uint32_t span = shard->n_samples / 4;
+                    if (span > 0) start_pos = (uint32_t)(mix_rng_() % span);
+                }
+                // Never consume the whole shard as offset.
+                if (start_pos >= shard->n_samples) start_pos = shard->n_samples - 1;
+
+                active_shards_.push_back({shard, start_pos});
+                if (++admitted_count_ >= kMixShards) initial_fill_done_ = true;
+            }
             // else: stale shard (old seq_len) — discard silently
         }
     };
@@ -199,10 +235,40 @@ void PretrainDataset::discover_files() {
 }
 
 void PretrainDataset::rebuild_distribution() {
+    // Sampling weight per file.
+    //
+    // The language weights from lang_sample_weight() (EN 0.55 / JA 0.45) must
+    // control the LANGUAGE ratio. Multiplying them by the raw file size — as
+    // this did previously — lets corpus size override that intent: with
+    // EN=4071MB vs JA=2043MB the actual token exposure came out 70.9/29.1
+    // instead of 55/45, starving JA by 35% of its budget.
+    //
+    // Every shard yields the same token count (target_samples =
+    // shard_tokens / seq_len in load_shard), so the file-selection ratio IS
+    // the trained-token ratio.
+    //
+    // Fix: normalise each file's size by the TOTAL size of its own language.
+    // The language weight then becomes absolute, while files within a language
+    // still stay proportional to their size.
+    //     w = lang_weight * (file_size / total_size_of_that_language)
+    constexpr size_t kNumLangs = 5;   // see enum class Language
+    double lang_total[kNumLangs] = {0};
+    for (const auto& f : files_) {
+        size_t li = (size_t)f.lang;
+        if (li < kNumLangs) lang_total[li] += (double)f.byte_size;
+    }
+
     std::vector<float> weights;
     weights.reserve(files_.size());
     for (const auto& f : files_) {
-        float w = f.weight * std::max(1.0f, (float)f.byte_size / (1024.f * 1024.f));
+        size_t li = (size_t)f.lang;
+        double total = (li < kNumLangs) ? lang_total[li] : 0.0;
+        // A zero-byte file yields no samples; giving it weight would just
+        // burn prefetch cycles on empty shards. total==0 means every file of
+        // this language is empty, which lands in the same branch.
+        float w = (f.byte_size > 0 && total > 0.0)
+                ? f.weight * (float)((double)f.byte_size / total)
+                : 0.0f;
         weights.push_back(w);
     }
     {

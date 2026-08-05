@@ -301,6 +301,51 @@ def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=F
         print(f"[UPLOAD] Done: {uploaded}/{len(files)} files (step={step}, tok={tokens})")
         return uploaded > 0
 
+def upload_eval_log(path, step, tokens, folder_id=None):
+    """Upload the eval report (a small .txt) to Drive.
+
+    Kept completely separate from upload(), whose file list is hardcoded for
+    checkpoints. Reuses find_token_file/get_credentials/upload_file_to_drive.
+
+    This is BEST-EFFORT by design: it is invoked from run_eval() during
+    training, so it must never raise and never be fatal. Every failure path
+    returns False after printing a warning.
+    """
+    try:
+        if not os.path.isfile(path):
+            print(f"[EVAL-UPLOAD] File not found: {path} — skipping", file=sys.stderr)
+            return False
+
+        key_path = find_token_file()
+        if key_path is None:
+            print(f"[EVAL-UPLOAD] Token '{TOKEN_FILENAME}' not found — skipping",
+                  file=sys.stderr)
+            return False
+
+        if folder_id is None:
+            folder_id = GDRIVE_FOLDER_ID
+
+        from googleapiclient.discovery import build
+        creds = get_credentials()
+        if creds is None:
+            print("[EVAL-UPLOAD] No credentials — skipping", file=sys.stderr)
+            return False
+        service = build('drive', 'v3', credentials=creds, cache_discovery=False)
+
+        # Fixed remote name -> upload_file_to_drive() updates the existing file
+        # instead of creating duplicates, so Drive keeps one growing history.
+        size_kb = os.path.getsize(path) / 1024.0
+        upload_file_to_drive(service, path, folder_id, filename='eval_log.txt')
+        print(f"[EVAL-UPLOAD] eval_log.txt ({size_kb:.1f} KB) "
+              f"synced (step={step}, tok={tokens})")
+        return True
+
+    except Exception as e:
+        # Swallow everything: a failed eval upload must not stop training.
+        print(f"[EVAL-UPLOAD] Failed: {e} — continuing", file=sys.stderr)
+        return False
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--auth', action='store_true', help='Run OAuth2 flow (once, locally)')
@@ -313,10 +358,21 @@ if __name__ == '__main__':
                    help='Stage tag for file selection [pretrain]')
     p.add_argument('--prepare-only', action='store_true', dest='prepare_only',
                    help='Only snapshot+zip, do not upload')
+    p.add_argument('--eval_log', default=None, metavar='PATH',
+                   help='Upload an eval report .txt instead of a checkpoint')
     args = p.parse_args()
 
     if args.auth:
         do_auth_flow()
+        sys.exit(0)
+
+    if args.eval_log:
+        # Always exit 0: run_eval() treats a non-zero status as a warning, and
+        # a failed eval upload is never a reason to interrupt training.
+        try:
+            upload_eval_log(args.eval_log, args.step, args.tokens, args.folder_id)
+        except Exception as e:
+            print(f"[EVAL-UPLOAD] Unexpected error: {e}", file=sys.stderr)
         sys.exit(0)
 
     ok = upload(args.ckpt_dir, args.step, args.tokens, args.folder_id,

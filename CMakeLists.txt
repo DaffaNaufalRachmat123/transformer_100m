@@ -88,10 +88,11 @@ target_link_libraries(train_sft_cuda PRIVATE
 # ─── Gradient/kernel correctness harness (opt-in, NOT built by default) ────
 #   cmake --build build --target grad_check && ./build/grad_check
 add_executable(grad_check EXCLUDE_FROM_ALL
-    cuda/grad_check.cu
+    ${CMAKE_SOURCE_DIR}/cuda/grad_check.cu
 )
 target_include_directories(grad_check PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/cuda
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_link_libraries(grad_check PRIVATE

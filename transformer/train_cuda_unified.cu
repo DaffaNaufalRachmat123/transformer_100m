@@ -443,10 +443,35 @@ static float train_step_ce(TrainState& st,
 }
 
 // ─── LR schedule (warmup + cosine) ──────────────────────────────────────────
+// ─── DDP topology helpers ──────────────────────────────────────────────────
+// Single source of truth for world size / rank, valid in both DDP and
+// single-GPU builds. Stages 2-4 use these to shard data and to size the LR
+// schedule, so that a run produces the same optimization trajectory whether
+// it is launched on 1 GPU or N.
+static inline int ddp_world() {
+#ifdef USE_DDP
+    if (g_use_ddp) return std::max(1, cuda::ddp::world_size());
+#endif
+    return 1;
+}
+
+static inline int ddp_rank() {
+#ifdef USE_DDP
+    if (g_use_ddp) return cuda::ddp::rank();
+#endif
+    return 0;
+}
+
 static float sched_lr(int step, int total_steps) {
     float lr = g_lr * std::min(1.0f, (float)(step + 1) / (float)std::max(1, g_warmup));
     if (step >= g_warmup && total_steps > g_warmup) {
         float progress = (float)(step - g_warmup) / (float)(total_steps - g_warmup);
+        // Clamp: cos() is periodic, so progress > 1 (reachable when a resumed
+        // run overshoots the recomputed total, or --max_steps is lowered)
+        // would ramp the LR back UP toward peak instead of holding at the
+        // floor. Same failure mode that was fixed in the pretrain schedule.
+        if (progress < 0.0f) progress = 0.0f;
+        if (progress > 1.0f) progress = 1.0f;
         lr = g_lr * 0.5f * (1.0f + cosf(3.14159265f * progress));
         lr = std::max(lr, g_lr * 0.1f);
     }
@@ -807,7 +832,22 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        int total_steps = g_epochs * (int)samples.size() / g_batch_size;
+        // ─── DDP data sharding ─────────────────────────────────────────────
+        // Every rank runs this same loop, so without an explicit stride all
+        // GPUs would load the IDENTICAL batch, allreduce identical gradients
+        // and produce exactly the single-GPU result at N times the cost (and
+        // an N-times-too-short schedule, since `step` advances once per rank
+        // per global batch). Give each rank its own slice: rank r takes the
+        // batch starting at (bi + r*B), and the loop strides by world*B.
+        const int   ddp_w      = ddp_world();
+        const int   ddp_r      = ddp_rank();
+        const size_t global_bs = (size_t)g_batch_size * (size_t)ddp_w;
+
+        // total_steps counts GLOBAL batches: one optimizer step consumes
+        // global_bs samples, so the cosine schedule spans the real number of
+        // updates and has the same shape on 1 GPU or N.
+        int total_steps = (int)((size_t)g_epochs * samples.size() / global_bs);
+        if (total_steps < 1) total_steps = 1;
         if (g_max_steps > 0) total_steps = std::min(total_steps, g_max_steps);
 
         auto t0 = Clock::now();
@@ -815,13 +855,23 @@ int main(int argc, char** argv) {
         float running_loss = 0;
 
         for (int epoch = start_epoch; epoch < g_epochs && !g_stop; epoch++) {
+            // Same seed on every rank => same permutation => the disjoint
+            // rank slices below together cover the epoch exactly once.
             std::mt19937 rng(42 + epoch);
             std::shuffle(samples.begin(), samples.end(), rng);
 
             // On the first (resumed) epoch, skip already-processed samples.
             size_t bi_start = (epoch == start_epoch) ? start_sample_idx : 0;
-            for (size_t bi = bi_start; bi + g_batch_size <= samples.size() && !g_stop; bi += g_batch_size) {
+            // Align the resume point to a global-batch boundary so the rank
+            // slices stay disjoint after a restart.
+            bi_start = (bi_start / global_bs) * global_bs;
+
+            for (size_t bi = bi_start; bi + global_bs <= samples.size() && !g_stop;
+                 bi += global_bs) {
                 if (g_max_steps > 0 && step >= g_max_steps) break;
+
+                // This rank's slice of the global batch.
+                const size_t base = bi + (size_t)ddp_r * (size_t)g_batch_size;
 
                 int S = g_max_seq, B = g_batch_size;
                 std::vector<int> batch_tokens(B * S, TOK_PAD);
@@ -829,7 +879,7 @@ int main(int argc, char** argv) {
                 std::vector<float> batch_mask(B * S, 0.0f);
 
                 for (int b = 0; b < B; b++) {
-                    auto& sample = samples[bi + b];
+                    auto& sample = samples[base + b];
                     int len = std::min((int)sample.tokens.size(), S - 1);
                     for (int t = 0; t < len; t++) {
                         batch_tokens[b * S + t] = sample.tokens[t];
@@ -854,14 +904,14 @@ int main(int argc, char** argv) {
                         double elapsed = std::chrono::duration<double>(Clock::now() - t0).count();
                         printf("[%s] ep=%d step=%d/%d loss=%.4f lr=%.2e %.1f tok/s\n",
                                tag, epoch + 1, step, total_steps, running_loss / g_log_every, lr,
-                               (double)step * B * S / elapsed);
+                               (double)step * (double)global_bs * S / elapsed);
                     }
                     running_loss = 0;
                 }
                 if (step % g_save_every == 0)
                     save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone")
                                           + "_step" + std::to_string(step),
-                                          step, epoch, bi + g_batch_size);
+                                          step, epoch, bi + global_bs);
             }
         }
         save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone") + "_final",
@@ -889,7 +939,13 @@ int main(int argc, char** argv) {
         auto ref_params = load_model(ref_path);
         printf("[DPO] Reference model loaded from: %s\n", ref_path.c_str());
 
-        int total_steps = g_epochs * (int)dpo_samples.size() / g_batch_size;
+        // ─── DDP data sharding (see the SFT loop for the rationale) ────────
+        const int    ddp_w      = ddp_world();
+        const int    ddp_r      = ddp_rank();
+        const size_t global_bs  = (size_t)g_batch_size * (size_t)ddp_w;
+
+        int total_steps = (int)((size_t)g_epochs * dpo_samples.size() / global_bs);
+        if (total_steps < 1) total_steps = 1;
         if (g_max_steps > 0) total_steps = std::min(total_steps, g_max_steps);
 
         auto t0 = Clock::now();
@@ -910,20 +966,27 @@ int main(int argc, char** argv) {
         };
 
         for (int epoch = start_epoch; epoch < g_epochs && !g_stop; epoch++) {
+            // Same seed on every rank => same permutation => disjoint slices.
             std::mt19937 rng(42 + epoch);
             std::shuffle(dpo_samples.begin(), dpo_samples.end(), rng);
 
             size_t bi_start = (epoch == start_epoch) ? start_sample_idx : 0;
-            for (size_t bi = bi_start; bi + g_batch_size <= dpo_samples.size() && !g_stop; bi += g_batch_size) {
+            bi_start = (bi_start / global_bs) * global_bs;
+
+            for (size_t bi = bi_start; bi + global_bs <= dpo_samples.size() && !g_stop;
+                 bi += global_bs) {
                 if (g_max_steps > 0 && step >= g_max_steps) break;
                 int S = g_max_seq, B = g_batch_size;
+
+                // This rank's slice of the global batch.
+                const size_t base = bi + (size_t)ddp_r * (size_t)g_batch_size;
 
                 std::vector<int> chosen_tok(B * S, TOK_PAD), rejected_tok(B * S, TOK_PAD);
                 std::vector<int> chosen_tgt(B * S, TOK_PAD), rejected_tgt(B * S, TOK_PAD);
                 std::vector<float> chosen_mask(B * S, 0.0f), rejected_mask(B * S, 0.0f);
 
                 for (int b = 0; b < B; b++) {
-                    auto& sample = dpo_samples[bi + b];
+                    auto& sample = dpo_samples[base + b];
                     int clen = std::min((int)sample.chosen_tokens.size(), S - 1);
                     for (int t = 0; t < clen; t++) {
                         chosen_tok[b * S + t] = sample.chosen_tokens[t];
@@ -1017,13 +1080,13 @@ int main(int argc, char** argv) {
                         printf("[DPO] ep=%d step=%d/%d loss=%.4f margin=%.3f lr=%.2e %.1f tok/s\n",
                                epoch + 1, step, total_steps,
                                running_loss / g_log_every, running_margin / g_log_every,
-                               lr, (double)step * B * S * 2 / elapsed);
+                               lr, (double)step * (double)global_bs * S * 2 / elapsed);
                     }
                     running_loss = 0; running_margin = 0;
                 }
                 if (step % g_save_every == 0)
                     save_stage_checkpoint("_dpo_step" + std::to_string(step),
-                                          step, epoch, bi + g_batch_size);
+                                          step, epoch, bi + global_bs);
             }
         }
         save_stage_checkpoint("_dpo_final", step, g_epochs, 0);

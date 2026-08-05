@@ -21,6 +21,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <csignal>
@@ -220,10 +221,37 @@ uint64_t get_seq_len_for_tokens(uint64_t processed, const std::vector<PhaseConfi
     return phases.back().seq_len;
 }
 
-// ─── Cosine LR schedule with warmup ───────────────────────────────────────
-static float cosine_lr(int step, int warmup, float max_lr, float min_lr, int total_steps) {
-    if (step < warmup) return max_lr * step / warmup;
-    float progress = (float)(step - warmup) / (float)(total_steps - warmup);
+// ─── Cosine LR schedule with warmup (TOKEN-based) ─────────────────────────
+// Progress is measured in TOKENS CONSUMED, not optimizer steps.
+//
+// The previous step-based version made the schedule shape depend on the
+// hardware, because total_steps was derived as
+//     max_tokens / (batch * seq * world)
+// so halving the GPU count (or the batch size) doubled total_steps and
+// stretched the cosine curve to twice its length. Concretely, at 763M/2B
+// tokens the 2xT4 run had already decayed to lr=9.4e-05 (22.5% along its
+// curve) while the 1xT4 run was still pinned near peak at 1.35e-04 (13.8%
+// along its curve) — a 43% higher LR at the same point in the data, on top
+// of the 2x smaller batch. That combination is what drove the instability.
+//
+// Token-based progress is invariant to world size, batch size and the
+// curriculum's mid-run VRAM auto-scaling: 763M/2B tokens is 38.15% of the
+// run on any configuration, so a checkpoint resumes onto exactly the same
+// LR regardless of the machine it moves to.
+//
+// `progress` MUST be clamped to [0,1]. cos() is periodic, so an unclamped
+// progress > 1 makes the LR climb back up instead of staying at min_lr:
+//   progress=1.0 -> min_lr   progress=1.5 -> ~55% of peak   progress=2.0 -> peak
+// That is reachable whenever --max_tokens is lowered on resume.
+static float cosine_lr_tokens(uint64_t tokens_done, uint64_t warmup_tokens,
+                              float max_lr, float min_lr, uint64_t total_tokens) {
+    if (warmup_tokens > 0 && tokens_done < warmup_tokens)
+        return max_lr * (float)tokens_done / (float)warmup_tokens;
+    if (total_tokens <= warmup_tokens) return min_lr;   // degenerate schedule
+    float progress = (float)(tokens_done - warmup_tokens) /
+                     (float)(total_tokens - warmup_tokens);
+    if (progress < 0.0f) progress = 0.0f;
+    if (progress > 1.0f) progress = 1.0f;   // hold at min_lr past the schedule
     return min_lr + 0.5f * (max_lr - min_lr) * (1.0f + cosf(M_PI * progress));
 }
 
@@ -308,15 +336,29 @@ void run_eval(const std::string& ckpt_dir,
     };
     const char* labels[] = {"EN","EN","EN","EN","EN","JA","JA","JA","JA","JA"};
 
-    printf("\n");
-    printf("╔══════════════════════════════════════════════════════════════════╗\n");
-    printf("║  [EVAL] @ %s tokens | step=%d | phase=%d | seq=%d              ║\n",
-           fmt_tok(tokens_done).c_str(), step, phase + 1, seq_len);
-    printf("║  loss=%.4f  ema=%.4f  gnorm=%.2f  lr=%.2e  decay=%.2f       ║\n",
-           loss_val, ema_loss_val, gnorm_val, lr_val, lr_decay_val);
-    printf("║  perplexity = e^%.4f = %.1f                                     ║\n",
-           loss_val, expf(loss_val));
-    printf("╠══════════════════════════════════════════════════════════════════╣\n");
+    // Everything below is accumulated into `out` so the exact same text can be
+    // (a) printed to stdout as before and (b) appended to eval_log.txt, without
+    // duplicating every printf. Formatting is done with snprintf into a scratch
+    // buffer to keep the printf-style format strings intact.
+    std::ostringstream out;
+    char lb[2048];
+    #define EMIT(...) do { snprintf(lb, sizeof(lb), __VA_ARGS__); out << lb; } while (0)
+
+    {
+        std::time_t now = std::time(nullptr);
+        char ts[64];
+        std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+        EMIT("\n");
+        EMIT("╔══════════════════════════════════════════════════════════════════╗\n");
+        EMIT("║  [EVAL] @ %s tokens | step=%d | phase=%d | seq=%d              ║\n",
+             fmt_tok(tokens_done).c_str(), step, phase + 1, seq_len);
+        EMIT("║  %s\n", ts);
+        EMIT("║  loss=%.4f  ema=%.4f  gnorm=%.2f  lr=%.2e  decay=%.2f       ║\n",
+             loss_val, ema_loss_val, gnorm_val, lr_val, lr_decay_val);
+        EMIT("║  perplexity = e^%.4f = %.1f                                     ║\n",
+             loss_val, expf(loss_val));
+        EMIT("╠══════════════════════════════════════════════════════════════════╣\n");
+    }
 
     for (int i = 0; i < 10; i++) {
         std::string cmd = g_eval_infer_bin
@@ -359,10 +401,10 @@ void run_eval(const std::string& ckpt_dir,
         while (!generated.empty() && (generated.back() == '\n' || generated.back() == '\r'))
             generated.pop_back();
 
-        printf("║  [%s] %s\n", labels[i], prompts[i]);
-        printf("║  → %s\n", generated.empty() ? "(no output)" : generated.c_str());
+        EMIT("║  [%s] %s\n", labels[i], prompts[i]);
+        EMIT("║  → %s\n", generated.empty() ? "(no output)" : generated.c_str());
         if (!prob_lines.empty()) {
-            printf("║  Top tokens:\n");
+            EMIT("║  Top tokens:\n");
             for (size_t p = 0; p < prob_lines.size() && p < 4; p++) {
                 // Strip leading spaces and newline
                 std::string pl = prob_lines[p];
@@ -370,15 +412,63 @@ void run_eval(const std::string& ckpt_dir,
                     pl.erase(0, 1);
                 while (!pl.empty() && (pl.back() == '\n' || pl.back() == '\r'))
                     pl.pop_back();
-                printf("║    %s\n", pl.c_str());
+                EMIT("║    %s\n", pl.c_str());
             }
             if (prob_lines.size() > 4)
-                printf("║    ... (%zu more steps)\n", prob_lines.size() - 4);
+                EMIT("║    ... (%zu more steps)\n", prob_lines.size() - 4);
         }
-        printf("║\n");
+        EMIT("║\n");
     }
 
-    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    EMIT("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    #undef EMIT
+
+    // ─── Print to stdout (unchanged behaviour) ─────────────────────────────
+    const std::string report = out.str();
+    fputs(report.c_str(), stdout);
+    fflush(stdout);
+
+    // ─── Persist to eval_log.txt, then upload ──────────────────────────────
+    // Written to checkpoint_dir (NOT tmp_dir — that gets deleted below).
+    // Appended so one file accumulates the full history across milestones.
+    //
+    // Every step here is best-effort: eval logging must NEVER interrupt
+    // training. Any failure is reported and swallowed.
+    try {
+        std::string log_path = ckpt_dir + "/eval_log.txt";
+        {
+            std::ofstream lf(log_path, std::ios::app);
+            if (lf) {
+                lf << report;
+                lf.flush();
+            } else {
+                printf("[EVAL] WARN: cannot open %s for append — skipping upload\n",
+                       log_path.c_str());
+                log_path.clear();
+            }
+        }
+
+        if (!log_path.empty()) {
+            std::string script = g_upload_script.empty()
+                ? "python3 scripts/upload_gdrive.py"
+                : g_upload_script;
+            // Synchronous: the file is only a few KB, so this finishes in well
+            // under a second. Running it async would race with the next eval's
+            // append. Exit status is deliberately ignored.
+            std::string cmd = script
+                + " --eval_log " + log_path
+                + " --step " + std::to_string(step)
+                + " --tokens " + std::to_string(tokens_done);
+            int rc = system(cmd.c_str());
+            if (rc != 0)
+                printf("[EVAL] WARN: eval_log upload failed (rc=%d) — training continues\n", rc);
+        }
+    } catch (const std::exception& e) {
+        printf("[EVAL] WARN: eval_log write/upload error: %s — training continues\n", e.what());
+    } catch (...) {
+        printf("[EVAL] WARN: eval_log write/upload failed — training continues\n");
+    }
+    fflush(stdout);
 
     // Clean up temp directory
     try { fs::remove_all(tmp_dir); }
@@ -1009,13 +1099,33 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
     ds_cfg.corpus_root = g_data_dir;
     ds_cfg.seq_len = g_max_seq;
     ds_cfg.batch_size = g_batch_size;
-    ds_cfg.seed = 42;
+    // Dataset RNG seed. This MUST advance with training progress.
+    //
+    // PretrainDataset seeds its RNG once in the constructor (rng_(cfg.seed)),
+    // and that RNG picks both the file and the random byte offset for every
+    // shard. train_state.txt does not persist any dataset position, so a
+    // hardcoded seed meant every --resume replayed the exact same file/offset
+    // sequence from the beginning. Symptom: identical prefetch lines across
+    // sessions ("wiki_ja.txt lines=24196" twice) and a loss that dropped ~200x
+    // faster than the token budget allows — memorisation, not learning.
+    //
+    // Deriving the seed from g_tokens_processed (already restored from the
+    // checkpoint at this point — see the resume block above) gives each
+    // session a different data stream at zero cost, with no train_state.txt
+    // format change and no loss of checkpoint compatibility.
+    //
+    // The *1000 stride leaves room for the rank offset below without any
+    // (tokens, rank) pair ever colliding with another.
+    ds_cfg.seed = 42 + (g_tokens_processed / 1000000) * 1000;
 #ifdef USE_DDP
     // Each DDP rank reads a different data stream (otherwise both GPUs train on
     // identical batches, wasting the second GPU).
-    if (g_use_ddp) ds_cfg.seed = 42 + 1000 * (uint64_t)cuda::ddp::rank();
+    if (g_use_ddp) ds_cfg.seed += (uint64_t)cuda::ddp::rank();
 #endif
     ds_cfg.weighted_sampling = true;
+
+    printf("[DATA] dataset seed=%llu (from tokens=%s)\n",
+           (unsigned long long)ds_cfg.seed, fmt_tok(g_tokens_processed).c_str());
 
     PretrainDataset dataset(ds_cfg);
     dataset.set_tokenize_fn([&tok](const std::string& text, std::vector<uint32_t>& out) {
@@ -1029,11 +1139,27 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
     dataset.print_info();
     printf("[DATA] Streaming loader ready: %s\n", g_data_dir.c_str());
 
-    // ─── Estimate total steps for LR schedule ──────────────────────────────
+    // ─── LR schedule (token-based, hardware-invariant) ─────────────────────
     const int cli_batch_size = g_batch_size;  // remember original for VRAM auto-scaling
-    int est_total_steps = (int)(g_max_tokens / (g_batch_size * g_max_seq));
-    int warmup_steps = std::min(2000, est_total_steps / 10);
+    // Progress is measured in tokens, so world size / batch size / the
+    // curriculum's VRAM auto-scaler cannot reshape the curve. A run is 38%
+    // done at 763M/2B tokens on 1 GPU or 8, which means a checkpoint moved
+    // between machines resumes onto exactly the same LR.
+    //
+    // Warmup is 1% of the budget (20M tokens at 2B), capped so tiny debug
+    // runs still get a warmup that is short relative to the run.
+    const uint64_t warmup_tokens = std::min<uint64_t>(g_max_tokens / 100,
+                                                      20'000'000ULL);
     float min_lr = g_lr * 0.1f;
+    // Steps are still reported for readability; they are no longer used by
+    // the schedule itself.
+    const int lr_world = (g_use_ddp && g_num_gpus > 1) ? g_num_gpus : 1;
+    int est_total_steps = (int)std::max<uint64_t>(1,
+        g_max_tokens / ((uint64_t)g_batch_size * (uint64_t)g_max_seq * (uint64_t)lr_world));
+    printf("[LR] schedule: token-based | warmup=%s / %s tokens "
+           "peak=%.2e min=%.2e (est_steps=%d world=%d)\n",
+           fmt_tok(warmup_tokens).c_str(), fmt_tok(g_max_tokens).c_str(),
+           g_lr, min_lr, est_total_steps, lr_world);
 
     // ─── Training loop ──────────────────────────────────────────────────────
     auto t_start = Clock::now();
@@ -1143,7 +1269,8 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
         cuda::CudaTensor d_mask = cuda::CudaTensor::from_host(mask_cpu.data(), {B, S});
 
         // ─── LR schedule ───────────────────────────────────────────────────
-        float lr = cosine_lr(step, warmup_steps, g_lr, min_lr, est_total_steps);
+        float lr = cosine_lr_tokens(g_tokens_processed, warmup_tokens,
+                                    g_lr, min_lr, g_max_tokens);
         // Phase-transition cooldown: for kPhaseWarmupSteps steps after a
         // curriculum seq_len switch, scale the LR down to kPhaseCooldownFloor
         // and linearly ramp back up to 1.0x. This gives the optimizer time

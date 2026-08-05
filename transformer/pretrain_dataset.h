@@ -84,7 +84,13 @@ struct PretrainDatasetConfig {
     std::string corpus_root;                  // e.g. "./datasets"
     uint32_t    seq_len         = 256;        // current stage seq length
     uint32_t    batch_size      = 1;
-    uint32_t    prefetch_shards = 4;          // shards in ring buffer
+    // Ring buffer depth. Must comfortably exceed kMixShards (12) or
+    // next_batch() can never reach a full mix: refill_active() drains
+    // whatever is ready and returns, so a shallow ring keeps the active set
+    // permanently under-filled and re-introduces the low-diversity batches
+    // this design is meant to avoid.
+    // Cost: 16 x 1M tokens x 4B = 64 MB host RAM.
+    uint32_t    prefetch_shards = 16;         // shards in ring buffer
     uint32_t    shard_tokens    = 1 << 20;    // 1M tokens per shard
     uint64_t    seed            = 42;
     bool        weighted_sampling = true;     // follow lang proportions
@@ -161,6 +167,9 @@ public:
         if (new_seq == cfg_.seq_len) return;
         cfg_.seq_len = new_seq;
         active_shards_.clear();
+        // Restart the staggered-admission fan-out (see next_batch()).
+        initial_fill_done_ = false;
+        admitted_count_    = 0;
         leftover_shard_.reset();
         leftover_pos_ = 0;
         // Advance stage_idx_ to match, if possible
@@ -206,12 +215,46 @@ private:
     // one sample from each active shard so every batch contains a MIX of
     // languages/domains (prevents single-language batches that cause loss to
     // oscillate on shard boundaries).
+    //
+    // kMixShards=4 was too small. With shard_tokens=1M and seq_len=256 each
+    // shard holds 4096 samples; at batch=24 round-robined over 4 shards each
+    // shard is drained in 4096/(24/4) = 682.67 steps. All four then expire in
+    // the same window and get replaced by four fresh (file, offset) draws, so
+    // the entire batch composition flips at once. Measured effect: the EMA
+    // loss stepped between ~3.25 and ~3.75 (1.65x perplexity) at gaps of
+    // exactly 680 / 2050 / 2730 steps = 1 / 3 / 4 shard-cycles, with gnorm
+    // completely flat (1.9-2.4) — i.e. a data-composition artefact, not
+    // optimizer divergence.
+    //
+    // 12 shards gives each batch a much broader sample of the corpus, so one
+    // noisy file (mc4_ja) can no longer dominate a whole batch. Combined with
+    // the staggered-retirement logic in next_batch(), shards now expire a few
+    // at a time instead of all together, removing the periodic cliff.
+    //
+    // Memory cost is bounded and small: 12 shards x 1M tokens x 4B = 48 MB
+    // host RAM (was 16 MB). Observed process RSS is 0.4 GB, so this is noise.
     struct ActiveShard {
         std::shared_ptr<Shard> shard;
         uint32_t pos = 0;
     };
     std::vector<ActiveShard> active_shards_;
-    static constexpr uint32_t kMixShards = 4;  // languages mixed per batch
+    static constexpr uint32_t kMixShards = 12;  // files mixed per batch
+
+    // Staggered-retirement state (see next_batch() in the .cpp).
+    //
+    // Every active shard is drained at the same rate, so if they all enter at
+    // pos=0 they also all expire together and the whole batch composition
+    // flips at once. We therefore admit shards with a non-zero starting
+    // offset: an even spread on the initial fill, then a small random jitter
+    // on each later admission so the retirement times never re-synchronise.
+    //
+    // mix_rng_ is deliberately SEPARATE from rng_: rng_ is owned by the
+    // prefetch thread (load_shard picks file + byte offset with it, partly
+    // outside dist_mtx_), and next_batch() runs on the training thread.
+    // Sharing one generator across the two would be a data race.
+    std::mt19937_64 mix_rng_;
+    bool     initial_fill_done_ = false;
+    uint32_t admitted_count_    = 0;
 
     std::atomic<uint64_t> tokens_consumed_{0};
 

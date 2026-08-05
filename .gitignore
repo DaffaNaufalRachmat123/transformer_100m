@@ -4,6 +4,7 @@ build/
 *.safetensors
 # *.bin  — keep bpe_v6.bin (tokenizer model), just omit *.o and *.d
 data/
+data_cleaned/
 checkpoints/
 sft_data/
 __pycache__/
