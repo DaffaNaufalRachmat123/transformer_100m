@@ -1,0 +1,156 @@
+{
+  "model": "translation_resources/ckpt_sft_final.safetensors",
+  "num_tested": 200,
+  "bleu": {
+    "en-ja": 0.0,
+    "ja-en": 0.0,
+    "combined": 0.0
+  },
+  "chrf": {
+    "en-ja": 0.0,
+    "ja-en": 0.0033333333333333335,
+    "combined": 0.0016666666666666668
+  },
+  "samples": [
+    {
+      "lang": "ja-en",
+      "user": "Translate to English: 助けてー　おかあさーん",
+      "reference": "Help me! Mommy!",
+      "prediction": "！",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: 両方で モウレー夫人 そうはいきません",
+      "reference": "Sugar, lemon, or both? Both. Mrs. Mulwray, I don't want to drop it.",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳してください: Julia Howard may have been involved in Miranda Roman's death.",
+      "reference": "ジュリア・ハワードは ミランダ・ローマンの死に 関わっていたかもしれない",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳: In other words. If I also kill minor criminals being broadcast when I watch TV.",
+      "reference": "つまり、僕がテレビを見ている時に報道された",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳: Did the prints tell you anything?",
+      "reference": "指紋で何かわかりましたか？",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳してください: The castle built in Ki was identified as Kii-jo Castle.",
+      "reference": "椽に築かれた城は基肄城と比定されている。",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: 四段階目のように 正直になれば",
+      "reference": "But if I'm honest, like the fourth step asks us to be,",
+      "prediction": "いい。",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: 追い込もう",
+      "reference": "We push him.",
+      "prediction": "。",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "Translate to Japanese: Because if I wasn't the one to find you, they certainly would have killed you.",
+      "reference": "僕が見つけなければ 彼らに殺されて しまうからね",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳: I can forgive all kinds of betrayal and dishonesty.",
+      "reference": "許すことができる すべての裏切りに 正直になれば",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "Translate to English: マンダリンは \"王の側近\" を意味する",
+      "reference": "The name is an ancient Chinese war mantle meaning \"adviser to the king.\"",
+      "prediction": "英語で「王」と言います。",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "Translate to Japanese: Nothing to fly.",
+      "reference": "飛ばないから",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: 早くここから出たいんですが",
+      "reference": "I'd really like to get out of here.",
+      "prediction": "。",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: そして、当分の間、私たちはつもりだ オートボットの保護と一緒に家をお送り。",
+      "reference": "And, for the time being, we're gonna send you home with Autobot protection.",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: サーカス団が パリに行ったとき ショーを去るよう 私を説得した",
+      "reference": "He convinced me to leave the three-ring when the show went to Paris.",
+      "prediction": "のです。",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: 週に2・3度ジムに行っている。",
+      "reference": "I go to the gym two or three times a week.",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "Translate: I'd like to eat curry rice for dinner.",
+      "reference": "今夜はカレーが食べたいな。",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "Translate to English: まずは暗証番号010567",
+      "reference": "The first part is 010567.",
+      "prediction": "00です。",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: トムは雑誌を取り出し、読み始めた。",
+      "reference": "Tom took out a magazine and began to read it.",
+      "prediction": "",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳してください: The destruction of Kamino will stop their production of clones for good.",
+      "reference": "カミーノの壊滅はクローンの生産を永遠に 止めるべきだ",
+      "prediction": "",
+      "chrf": 0.0
+    }
+  ]
+}

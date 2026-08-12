@@ -191,6 +191,18 @@ static inline void launch_f16_to_f32_seed(const __half* src, float* accum, size_
     f16_to_f32_seed_kernel<<<grid, block, 0, stream>>>(src, accum, n);
 }
 
+// ─── Element-wise add for FP32 buffers: dst[i] += src[i] ────────────────────
+__global__ void f32_add_kernel(const float* __restrict__ src, float* __restrict__ dst, size_t n) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) dst[i] += src[i];
+}
+
+static inline void launch_f32_add(const float* src, float* dst, size_t n, cudaStream_t stream) {
+    int block = 256;
+    int grid = (int)((n + block - 1) / block);
+    f32_add_kernel<<<grid, block, 0, stream>>>(src, dst, n);
+}
+
 // ─── L2 norm squared of FP16 buffer (for gradient clipping) ─────────────────
 // Accumulates sum-of-squares into *out (must be zeroed before first call).
 // Multiple calls accumulate into the same output for global norm computation.

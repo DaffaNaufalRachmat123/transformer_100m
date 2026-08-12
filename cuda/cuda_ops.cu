@@ -324,9 +324,9 @@ void sum_all_fp16_impl(const __half* in, float* out, size_t n, cudaStream_t stre
 }
 
 // ─── DPO: masked_log_probs ─────────────────────────────────────────────────
-// Computes sum of log_softmax(logits)[targets] weighted by mask
+// Computes MEAN of log_softmax(logits)[targets] over masked positions.
 // logits: [B*S, V], targets: [B*S], mask: [B*S]
-// Returns scalar tensor with the sum
+// Returns scalar tensor with the per-token mean log-prob.
 __global__ void masked_log_probs_kernel(
     const __half* logits, const int* targets, const float* mask,
     float* output, int BS, int V)
@@ -334,36 +334,48 @@ __global__ void masked_log_probs_kernel(
     extern __shared__ float sdata[];
     int tid = threadIdx.x;
     float local_sum = 0.0f;
+    float local_count = 0.0f;
 
     for (int pos = tid; pos < BS; pos += blockDim.x) {
         if (mask[pos] <= 0.0f) continue;
 
-        // log_softmax for this position
         const __half* row = logits + (size_t)pos * V;
         int target = targets[pos];
         if (target < 0 || target >= V) continue;
 
-        // Find max for numerical stability
         float max_val = -1e30f;
         for (int j = 0; j < V; j++) {
             float v = __half2float(row[j]);
             if (v > max_val) max_val = v;
         }
-        // Compute log(sum(exp(x - max))) + max - x[target]
         float sum_exp = 0.0f;
         for (int j = 0; j < V; j++)
             sum_exp += expf(__half2float(row[j]) - max_val);
         float log_prob = __half2float(row[target]) - max_val - logf(sum_exp);
-        local_sum += mask[pos] * log_prob;
+        local_sum += log_prob;
+        local_count += 1.0f;
     }
 
+    // Reduce sum
     sdata[tid] = local_sum;
     __syncthreads();
     for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
         if (tid < stride) sdata[tid] += sdata[tid + stride];
         __syncthreads();
     }
-    if (tid == 0) output[0] = sdata[0];
+    float total_sum = sdata[0];
+
+    // Reduce count
+    sdata[tid] = local_count;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) sdata[tid] += sdata[tid + stride];
+        __syncthreads();
+    }
+    float total_count = sdata[0];
+
+    if (tid == 0)
+        output[0] = (total_count > 0.0f) ? (total_sum / total_count) : 0.0f;
 }
 
 CudaTensor masked_log_probs(const CudaTensor& logits, const CudaTensor& targets,

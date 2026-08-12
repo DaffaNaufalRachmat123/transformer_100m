@@ -253,7 +253,7 @@ def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=F
         print(f"\r[UPLOAD] Compress [====================] 100% | {zip_size:.0f} MB in {time.time()-t0:.0f}s ✓{'':30}")
 
         # Upload to GDrive — always overwrite same filename
-        GDRIVE_ZIP_NAME = 'checkpoint_latest.zip' if stage == 'pretrain' else f'checkpoint_{stage}_latest.zip'
+        GDRIVE_ZIP_NAME = 'checkpoint_latest.zip' if stage == 'pretrain' else f'checkpoint_{stage}.zip'
         MAX_RETRIES = 2
         for attempt in range(MAX_RETRIES + 1):
             try:

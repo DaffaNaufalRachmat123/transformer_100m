@@ -76,6 +76,7 @@ static int    g_batch_size            = 4;
 static int    g_epochs                = 3;
 static float  g_lr                    = 3e-5f;
 static float  g_dpo_beta             = 0.1f;
+static float  g_dpo_max_margin       = 5.0f;
 static int    g_log_every             = 10;
 static int    g_save_every            = 200;
 static int    g_warmup                = 100;
@@ -83,6 +84,10 @@ static float  g_grad_clip             = 1.0f;
 static bool   g_use_ddp               = false;
 static int    g_num_gpus              = 2;
 static bool   g_resume                = false;
+static int    g_upload_every          = 0;      // 0 = disabled (fallback for all stages)
+static int    g_sft_upload_every      = -1;     // -1 = use g_upload_every; >=0 overrides for SFT
+static int    g_dpo_upload_every      = -1;     // -1 = use g_upload_every; >=0 overrides for DPO
+static std::string g_upload_script    = "";     // path to upload_gdrive.py
 
 static volatile bool g_stop = false;
 void sig_handler(int) { g_stop = true; }
@@ -500,9 +505,14 @@ int main(int argc, char** argv) {
         else if (arg == "--epochs" && i+1 < argc)    g_epochs = std::stoi(argv[++i]);
         else if (arg == "--lr" && i+1 < argc)        g_lr = std::stof(argv[++i]);
         else if (arg == "--dpo_beta" && i+1 < argc)  g_dpo_beta = std::stof(argv[++i]);
+        else if (arg == "--dpo_max_margin" && i+1 < argc) g_dpo_max_margin = std::stof(argv[++i]);
         else if (arg == "--grad_clip" && i+1 < argc) g_grad_clip = std::stof(argv[++i]);
         else if (arg == "--log_every" && i+1 < argc) g_log_every = std::stoi(argv[++i]);
         else if (arg == "--save_every" && i+1 < argc) g_save_every = std::stoi(argv[++i]);
+        else if (arg == "--upload_every" && i+1 < argc) g_upload_every = std::stoi(argv[++i]);
+        else if (arg == "--sft_upload_every" && i+1 < argc) g_sft_upload_every = std::stoi(argv[++i]);
+        else if (arg == "--dpo_upload_every" && i+1 < argc) g_dpo_upload_every = std::stoi(argv[++i]);
+        else if (arg == "--upload_script" && i+1 < argc) g_upload_script = argv[++i];
         else if (arg == "--warmup" && i+1 < argc)    g_warmup = std::stoi(argv[++i]);
         else if (arg == "--ddp")                     g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)  g_num_gpus = std::stoi(argv[++i]);
@@ -520,6 +530,9 @@ int main(int argc, char** argv) {
             printf("  --lr               Learning rate [3e-5]\n");
             printf("  --max_seq          Max sequence length [512]\n");
             printf("  --grad_clip        Global grad-norm clip [1.0]\n");
+            printf("  --save_every       Save checkpoint every N steps [200]\n");
+            printf("  --upload_every     Upload checkpoint to GDrive every N steps [0=off]\n");
+            printf("  --upload_script    Path to upload_gdrive.py [scripts/upload_gdrive.py]\n");
             printf("  --ddp              Enable multi-GPU DDP (NCCL)\n");
             printf("  --resume           Resume from checkpoint (weights + optim + step)\n");
             return 0;
@@ -820,6 +833,28 @@ int main(int argc, char** argv) {
         }
     };
 
+    // ─── Upload to Google Drive (async: snapshot+compress+upload) ──────────
+    // Resolve effective upload interval per stage
+    int sft_upload_interval  = (g_sft_upload_every >= 0) ? g_sft_upload_every : g_upload_every;
+    int dpo_upload_interval  = (g_dpo_upload_every >= 0) ? g_dpo_upload_every : g_upload_every;
+
+    auto trigger_upload = [&](int cur_step, const char* stage) {
+#ifdef USE_DDP
+        if (g_use_ddp && !cuda::ddp::is_main()) return;
+#endif
+        std::string script = g_upload_script.empty()
+            ? "python3 scripts/upload_gdrive.py"
+            : g_upload_script;
+        std::string cmd = script
+            + " --ckpt_dir " + g_checkpoint_dir
+            + " --step " + std::to_string(cur_step)
+            + " --stage " + stage
+            + " --zip"
+            + " &";
+        printf("[UPLOAD] Triggering upload (step=%d, stage=%s)...\n", cur_step, stage);
+        (void)system(cmd.c_str());
+    };
+
     // ═══════════════════════════════════════════════════════════════════════
     // Stage 2 (SFT) and Stage 4 (Phone) — masked next-token CE
     // ═══════════════════════════════════════════════════════════════════════
@@ -904,19 +939,21 @@ int main(int argc, char** argv) {
                         double elapsed = std::chrono::duration<double>(Clock::now() - t0).count();
                         printf("[%s] ep=%d step=%d/%d loss=%.4f lr=%.2e %.1f tok/s\n",
                                tag, epoch + 1, step, total_steps, running_loss / g_log_every, lr,
-                               (double)step * (double)global_bs * S / elapsed);
+                               (double)(step - start_step) * (double)global_bs * S / elapsed);
                     }
                     running_loss = 0;
                 }
                 if (step % g_save_every == 0)
-                    save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone")
-                                          + "_step" + std::to_string(step),
+                    save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone"),
                                           step, epoch, bi + global_bs);
+                if (sft_upload_interval > 0 && step % sft_upload_interval == 0)
+                    trigger_upload(step, (g_stage == 2) ? "sft" : "phone");
             }
         }
         save_stage_checkpoint(std::string("_") + (g_stage == 2 ? "sft" : "phone") + "_final",
                               step, g_epochs, 0);
         printf("\n[DONE] %s complete. %d steps.\n", tag, step);
+        trigger_upload(step, (g_stage == 2) ? "sft" : "phone");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1023,45 +1060,108 @@ int main(int argc, char** argv) {
                 float rlp_c = cuda::masked_log_probs(ref_lc, d_chosen_tgt, d_chosen_mask).item_f32();
                 float rlp_r = cuda::masked_log_probs(ref_lr, d_rejected_tgt, d_rejected_mask).item_f32();
 
-                float logit_val = g_dpo_beta * ((lp_c - rlp_c) - (lp_r - rlp_r));
+                float raw_margin = (lp_c - rlp_c) - (lp_r - rlp_r);
+                float margin = fmaxf(fminf(raw_margin, g_dpo_max_margin), -g_dpo_max_margin);
+                float logit_val = g_dpo_beta * margin;
                 float dpo_loss  = logf(1.0f + expf(-logit_val));
                 running_loss   += dpo_loss;
-                running_margin += logit_val / g_dpo_beta;
+                running_margin += margin;
 
-                // DPO coefficient: d/dlogit [-log sigmoid(logit)] = -sigmoid(-logit)
-                float coeff = -g_dpo_beta * (1.0f / (1.0f + expf(logit_val)));
+                // sigma(-r) = 1/(1+exp(r)); numerically stable for large positive r
+                float sig_neg = (logit_val >= 0.0f)
+                    ? expf(-logit_val) / (1.0f + expf(-logit_val))
+                    : 1.0f / (1.0f + expf(logit_val));
+                // dL/d(logits_c[t]) = +beta*sigma(-r)/N * CE_grad[t] → chosen log-prob goes up
+                float coeff          =  g_dpo_beta * sig_neg;
+                float coeff_rejected = -g_dpo_beta * sig_neg;  // rejected log-prob goes down
 
-                // ── Backward through the CHOSEN branch with a fresh forward ──
-                // (increasing chosen log-prob lowers the loss when coeff<0).
+                // ── Backward through the CHOSEN branch (increase chosen log-prob) ──
                 st.dims.B = B; st.dims.S = S;
-                ts::FwdCache cache;
-                cuda::CudaTensor x_final = ts::forward(params, d_chosen_tok, st.dims,
-                                                       rope_cos, rope_sin, cache);
-                auto logits = cuda::matmul_transb(x_final, params[0]);
+                ts::FwdCache cache_c;
+                cuda::CudaTensor x_final_c = ts::forward(params, d_chosen_tok, st.dims,
+                                                         rope_cos, rope_sin, cache_c);
+                auto logits_c = cuda::matmul_transb(x_final_c, params[0]);
 
                 int BS = B * S;
                 cuda::CudaTensor per_token_loss({(int64_t)BS}, cuda::DType::F32);
-                cuda::CudaTensor d_logits({(int64_t)BS, (int64_t)MODEL_VOCAB}, cuda::DType::FP16);
-                launch_ce_fwd_bwd((const __half*)logits.data, (const int*)d_chosen_tgt.data,
+                cuda::CudaTensor d_logits_c({(int64_t)BS, (int64_t)MODEL_VOCAB}, cuda::DType::FP16);
+                launch_ce_fwd_bwd((const __half*)logits_c.data, (const int*)d_chosen_tgt.data,
                                   (const float*)d_chosen_mask.data,
-                                  (float*)per_token_loss.data, (__half*)d_logits.data,
+                                  (float*)per_token_loss.data, (__half*)d_logits_c.data,
                                   BS, MODEL_VOCAB, cuda::ctx.compute_stream);
 
-                // Count masked tokens for mean normalization
                 cuda::sync_compute();
-                int tok_count = 0;
-                for (int i = 0; i < BS; i++) if (chosen_mask[i] > 0.0f) tok_count++;
-                float norm = (tok_count > 0) ? (coeff / tok_count) : 0.0f;
-                launch_scale_fp16((__half*)d_logits.data, norm,
-                                  d_logits.numel(), cuda::ctx.compute_stream);
+                int tok_count_c = 0;
+                for (int i = 0; i < BS; i++) if (chosen_mask[i] > 0.0f) tok_count_c++;
+                float norm_c = (tok_count_c > 0) ? (coeff / tok_count_c) : 0.0f;
+                launch_scale_fp16((__half*)d_logits_c.data, norm_c,
+                                  d_logits_c.numel(), cuda::ctx.compute_stream);
 
-                auto dx_final = cuda::matmul(d_logits, params[0]);
-                auto d_embed_out = cuda::matmul(d_logits, x_final, true, false);
-                launch_f16_to_f32_seed((const __half*)d_embed_out.data,
+                auto dx_final_c = cuda::matmul(d_logits_c, params[0]);
+                auto d_embed_c = cuda::matmul(d_logits_c, x_final_c, true, false);
+                launch_f16_to_f32_seed((const __half*)d_embed_c.data,
                                        (float*)st.grads.embed_accum.data,
                                        (size_t)MODEL_VOCAB * D_MODEL, cuda::ctx.compute_stream);
-                ts::backward(params, d_chosen_tok, x_final, dx_final, st.dims,
-                             rope_cos, rope_sin, cache, st.grads);
+                ts::backward(params, d_chosen_tok, x_final_c, dx_final_c, st.dims,
+                             rope_cos, rope_sin, cache_c, st.grads);
+
+                // ── Backward through the REJECTED branch (decrease rejected log-prob) ──
+                {
+                    ts::Grads r_grads;
+                    alloc_grads(r_grads, params);
+
+                    ts::FwdCache cache_r;
+                    cuda::CudaTensor x_final_r = ts::forward(params, d_rejected_tok, st.dims,
+                                                             rope_cos, rope_sin, cache_r);
+                    auto logits_r = cuda::matmul_transb(x_final_r, params[0]);
+
+                    cuda::CudaTensor d_logits_r({(int64_t)BS, (int64_t)MODEL_VOCAB}, cuda::DType::FP16);
+                    {
+                        cuda::CudaTensor tloss({(int64_t)BS}, cuda::DType::F32);
+                        launch_ce_fwd_bwd((const __half*)logits_r.data, (const int*)d_rejected_tgt.data,
+                                          (const float*)d_rejected_mask.data,
+                                          (float*)tloss.data, (__half*)d_logits_r.data,
+                                          BS, MODEL_VOCAB, cuda::ctx.compute_stream);
+                    }
+
+                    cuda::sync_compute();
+                    int tok_count_r = 0;
+                    for (int i = 0; i < BS; i++) if (rejected_mask[i] > 0.0f) tok_count_r++;
+                    float norm_r = (tok_count_r > 0) ? (coeff_rejected / tok_count_r) : 0.0f;
+                    launch_scale_fp16((__half*)d_logits_r.data, norm_r,
+                                      d_logits_r.numel(), cuda::ctx.compute_stream);
+
+                    auto dx_final_r = cuda::matmul(d_logits_r, params[0]);
+                    auto d_embed_r = cuda::matmul(d_logits_r, x_final_r, true, false);
+                    launch_f16_to_f32_seed((const __half*)d_embed_r.data,
+                                           (float*)r_grads.embed_accum.data,
+                                           (size_t)MODEL_VOCAB * D_MODEL, cuda::ctx.compute_stream);
+                    ts::backward(params, d_rejected_tok, x_final_r, dx_final_r, st.dims,
+                                 rope_cos, rope_sin, cache_r, r_grads);
+
+                    // Accumulate rejected gradients into main grads
+                    elementwise_add_fp16((__half*)st.grads.d_embed.data,
+                                         (__half*)r_grads.d_embed.data,
+                                         (__half*)st.grads.d_embed.data,
+                                         st.grads.d_embed.numel(), cuda::ctx.compute_stream);
+                    elementwise_add_fp16((__half*)st.grads.d_final_rms.data,
+                                         (__half*)r_grads.d_final_rms.data,
+                                         (__half*)st.grads.d_final_rms.data,
+                                         st.grads.d_final_rms.numel(), cuda::ctx.compute_stream);
+                    launch_f32_add((const float*)r_grads.embed_accum.data,
+                                   (float*)st.grads.embed_accum.data,
+                                   (size_t)MODEL_VOCAB * D_MODEL, cuda::ctx.compute_stream);
+                    for (int l = 0; l < N_LAYERS; l++) {
+                        auto& lg = st.grads.layers[l];
+                        auto& rg = r_grads.layers[l];
+                        cuda::CudaTensor* lga[] = {&lg.dwq,&lg.dwk,&lg.dwv,&lg.dwo,&lg.dw1,&lg.dw2,&lg.dw3,&lg.drms_attn,&lg.drms_ffn};
+                        cuda::CudaTensor* rga[] = {&rg.dwq,&rg.dwk,&rg.dwv,&rg.dwo,&rg.dw1,&rg.dw2,&rg.dw3,&rg.drms_attn,&rg.drms_ffn};
+                        for (int i = 0; i < 9; i++)
+                            elementwise_add_fp16((__half*)lga[i]->data, (__half*)rga[i]->data,
+                                                 (__half*)lga[i]->data, lga[i]->numel(),
+                                                 cuda::ctx.compute_stream);
+                    }
+                }
 
 #ifdef USE_DDP
                 ddp_allreduce(st.grads);
@@ -1080,17 +1180,20 @@ int main(int argc, char** argv) {
                         printf("[DPO] ep=%d step=%d/%d loss=%.4f margin=%.3f lr=%.2e %.1f tok/s\n",
                                epoch + 1, step, total_steps,
                                running_loss / g_log_every, running_margin / g_log_every,
-                               lr, (double)step * (double)global_bs * S * 2 / elapsed);
+                               lr, (double)(step - start_step) * (double)global_bs * S * 2 / elapsed);
                     }
                     running_loss = 0; running_margin = 0;
                 }
                 if (step % g_save_every == 0)
-                    save_stage_checkpoint("_dpo_step" + std::to_string(step),
+                    save_stage_checkpoint("_dpo",
                                           step, epoch, bi + global_bs);
+                if (dpo_upload_interval > 0 && step % dpo_upload_interval == 0)
+                    trigger_upload(step, "dpo");
             }
         }
         save_stage_checkpoint("_dpo_final", step, g_epochs, 0);
         printf("\n[DONE] DPO complete. %d steps.\n", step);
+        trigger_upload(step, "dpo");
     }
 
     cudaFree(rope_cos);

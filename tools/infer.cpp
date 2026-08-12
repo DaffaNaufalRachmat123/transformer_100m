@@ -328,7 +328,10 @@ int main(int argc, char** argv) {
 
     Transformer::GenerateConfig gcfg;
     gcfg.max_new_tokens = 200;    // default 200; model stops early if it emits <|end|>
-    gcfg.temperature    = 0.8f;
+    // Default to greedy (temp=0). This small model is far more reliable with
+    // greedy decoding than with sampling (default 0.8 produced garbage in
+    // interactive mode). Users can switch to sampling via /sample or --temp.
+    gcfg.temperature    = 0.0f;
     gcfg.top_p          = 0.9f;
     gcfg.top_k          = 50;
     gcfg.eos_id         = 4;   // <|end|>

@@ -1,0 +1,156 @@
+{
+  "model": "translation_resources/ckpt_sft_final.safetensors",
+  "num_tested": 100,
+  "bleu": {
+    "en-ja": 0.6115851152544272,
+    "ja-en": 0.8533602121167789,
+    "combined": 0.732472663685603
+  },
+  "chrf": {
+    "en-ja": 0.01788644688644689,
+    "ja-en": 0.7555541962337629,
+    "combined": 0.3867203215601049
+  },
+  "samples": [
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳: I never see her without wanting to kiss her.",
+      "reference": "会えば必ずキスしたくなる。",
+      "prediction": "彼女にキスしたくない",
+      "chrf": 0.1538
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: 私は わが輝ける革命の 日々以来数ヵ年",
+      "reference": "And that for years, in fact since the days of our glorious revolution,",
+      "prediction": "since I was a man of the last few years and my life I've been at it for many years.",
+      "chrf": 0.042
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳してください: The destruction of Kamino will stop their production of clones for good.",
+      "reference": "カミーノの壊滅はクローンの生産を永遠に 止めるべきだ",
+      "prediction": "その配置は良好なものを保つことができます",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: どこにいるの？",
+      "reference": "You know where she is, Jane.",
+      "prediction": "where are you?",
+      "chrf": 0.0625
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳: Bring Saul home.",
+      "reference": "ソールを連れ戻して",
+      "prediction": "連れ帰るんだ",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: 結婚前に子供を持つのは重罪よ",
+      "reference": "Having a child before marriage is a mortal sin.",
+      "prediction": ", I don't think it's a right to have the child before they get married.",
+      "chrf": 0.1852
+    },
+    {
+      "lang": "ja-en",
+      "user": "Translate: 駿府に召された弾正様に 何ぞ無ければよいが",
+      "reference": "I do hope it has nothing to do with Danjo-sama being called to Sunpu.",
+      "prediction": ".. but if you were to be sent by the government, I would have no idea.",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳してください: He left Algeria for Germany.",
+      "reference": "彼はドイツに行くためにアルジェリアを後にした。",
+      "prediction": "彼はドイツに帰国した。",
+      "chrf": 0.0833
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: サーカス団が パリに行ったとき ショーを去るよう 私を説得した",
+      "reference": "He convinced me to leave the three-ring when the show went to Paris.",
+      "prediction": "He's the one who told me to go back to Paris when he went into a show.",
+      "chrf": 0.1406
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: 彼等は二人一組で動く",
+      "reference": "These guys work in pairs, you know that right?",
+      "prediction": "they are working together.",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳: Those who are being possessed by such spirits are all boasters and suspicious.",
+      "reference": "こうした霊に憑かれた人間は例外なく大言壮語するものであり、眉唾ものである。",
+      "prediction": "彼らはそんなに恐ろしいものを持っている人間であり、みな",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: 新しい環境に生活を合わせてゆかなければならなかった。",
+      "reference": "We had to gear our lives to the new circumstances.",
+      "prediction": "I had to live with my new life for a change of life.",
+      "chrf": 0.0652
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳してください: それから... 父さんは 僕の事も 大好きだって",
+      "reference": "Then she said... that you also... really love me.",
+      "prediction": "... and I love you so much.",
+      "chrf": 0.0303
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: そうか 病気っていう爆弾を抱えた近藤を",
+      "reference": "I see. So the top folks at HR cut off",
+      "prediction": "He's got a bomb he has to use for an orchid.",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "Translate to English: しかし、最後にもう一度、私について来てくれるか?",
+      "reference": "But last time. I follow?",
+      "prediction": "can I come back to you in the last one?",
+      "chrf": 0.0377
+    },
+    {
+      "lang": "en-ja",
+      "user": "日本語に翻訳してください: Captain, the situation is simple. I have three hostages.",
+      "reference": "部下を黙らせてる間は",
+      "prediction": "船長、人質は三つ目だ",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "Translate to English: 最初に、彼は靴ひもをほどいてくつを脱いだ。",
+      "reference": "The first thing he did was to untie his shoelaces and take his shoes off.",
+      "prediction": "he took his shoes off when first in the first place.",
+      "chrf": 0.2261
+    },
+    {
+      "lang": "ja-en",
+      "user": "Translate: 雑事要録",
+      "reference": "Zatsujiyoroku (household account book of the Konoe family)",
+      "prediction": "\"we was in the office for a few hours.",
+      "chrf": 0.0
+    },
+    {
+      "lang": "en-ja",
+      "user": "Translate to Japanese: Because if I wasn't the one to find you, they certainly would have killed you.",
+      "reference": "僕が見つけなければ 彼らに殺されて しまうからね",
+      "prediction": "君がいなかったら 彼らは君を殺した",
+      "chrf": 0.0
+    },
+    {
+      "lang": "ja-en",
+      "user": "英語に翻訳: 誰がまたスナグルズを プールに入れるの？",
+      "reference": "Who let Snuggles in the pool again?",
+      "prediction": ", who's gonna get theしまs to a bar?",
+      "chrf": 0.0
+    }
+  ]
+}
