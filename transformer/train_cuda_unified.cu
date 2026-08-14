@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <numeric>
 #include <string>
 #include <vector>
 #include <csignal>
@@ -91,6 +92,16 @@ static std::string g_upload_script    = "";     // path to upload_gdrive.py
 
 static volatile bool g_stop = false;
 void sig_handler(int) { g_stop = true; }
+
+// ─── RL (Stage 5) config ───────────────────────────────────────────────────
+static std::string g_rl_dir        = "rl_data";
+static int    g_rl_n_samples       = 6;      // N completions sampled per prompt
+static int    g_rl_max_new         = 80;     // max new tokens per completion
+static float  g_rl_beta            = 0.1f;   // KL penalty coefficient
+static float  g_rl_temp            = 0.8f;   // sampling temperature
+static int    g_rl_top_k           = 50;     // top-k sampling
+static std::string g_verifier_cmd  = "python3 scripts/rl_verifier.py";
+static std::string g_rl_workdir    = "rl_work";
 
 // ─── Token IDs ─────────────────────────────────────────────────────────────
 static int TOK_BOS = -1, TOK_EOS = -1, TOK_PAD = -1;
@@ -196,14 +207,24 @@ std::vector<SFTSample> load_sft_data(const std::string& dir, BPEEncoder& tok, in
                 text_pos = alt_pos;
             }
             auto text_start = (line[text_pos + 7] == ' ') ? text_pos + 9 : text_pos + 8;
-            // Find the closing quote by scanning forward from text_start
-            auto text_end = text_start;
-            while (text_end < line.size() && line[text_end] != '"') {
-                if (line[text_end] == '\\' && text_end + 1 < line.size()) text_end++;
-                text_end++;
+            // Find the closing quote scanning from text_start, unescaping JSON
+            // escapes ("\n", "\t", "\"", "\\", ...) so multi-line responses
+            // (e.g. code solutions) survive the naive line parser.
+            std::string text;
+            for (size_t i = text_start; i < line.size() && line[i] != '"'; i++) {
+                if (line[i] == '\\' && i + 1 < line.size()) {
+                    i++;
+                    if (line[i] == 'n') text += '\n';
+                    else if (line[i] == 't') text += '\t';
+                    else if (line[i] == 'r') text += '\r';
+                    else if (line[i] == '"') text += '"';
+                    else if (line[i] == '\\') text += '\\';
+                    else { text += '\\'; text += line[i]; }
+                } else {
+                    text += line[i];
+                }
             }
-            if (text_end >= line.size()) continue;
-            std::string text = line.substr(text_start, text_end - text_start);
+            if (text.empty()) continue;
 
             auto ids = tok.encode(text, true, true);
             if ((int)ids.size() > max_seq) ids.resize(max_seq);
@@ -283,6 +304,148 @@ std::vector<DPOSample> load_dpo_data(const std::string& dir, BPEEncoder& tok, in
     }
     printf("[DPO] Loaded %zu preference pairs from %s\n", samples.size(), dir.c_str());
     return samples;
+}
+
+// ─── RL Data Loading (JSONL, one verifiable coding task per line) ──────────
+struct RLSample {
+    std::string lang;                 // "en" | "ja"
+    std::string prompt_text;          // human-readable instruction
+    std::vector<int> prompt_tokens;   // encoded <|system|>..<|user|>..<|assistant|> prefix
+    std::string mock_input;           // stdin content for the verifier
+    std::string expected_output;      // expected stdout (stripped)
+};
+
+std::vector<RLSample> load_rl_data(const std::string& dir, BPEEncoder& tok, int max_seq) {
+    std::vector<RLSample> samples;
+    for (auto& entry : fs::directory_iterator(dir)) {
+        if (entry.path().extension() != ".jsonl") continue;
+        std::ifstream f(entry.path());
+        std::string line;
+        while (std::getline(f, line)) {
+            std::string lang = extract_json_string(line, "lang");
+            std::string prompt_txt = extract_json_string(line, "prompt");
+            std::string mock_input = extract_json_string(line, "mock_input");
+            std::string expected   = extract_json_string(line, "expected_output");
+            if (prompt_txt.empty() || expected.empty()) continue;
+
+            std::string prefix = "<|system|>You are a coding assistant.<|user|>"
+                               + prompt_txt + "<|assistant|>";
+            auto ids = tok.encode(prefix, true, true);
+            if ((int)ids.size() > max_seq) ids.resize(max_seq);
+
+            RLSample s;
+            s.lang = lang;
+            s.prompt_text = prompt_txt;
+            s.prompt_tokens = std::vector<int>(ids.begin(), ids.end());
+            s.mock_input = mock_input;
+            s.expected_output = expected;
+            samples.push_back(std::move(s));
+        }
+    }
+    printf("[RL] Loaded %zu verifiable tasks from %s\n", samples.size(), dir.c_str());
+    return samples;
+}
+
+// ─── CUDA kernels for RL sampling / scaling ───────────────────────────────
+// Gather logits rows (one per sequence) from a [M, V] tensor into a [G, V]
+// buffer, so only the positions we sample from are copied to host.
+__global__ void gather_logits_rows_kernel(
+    const __half* __restrict__ logits, const int* __restrict__ rows,
+    __half* __restrict__ out, int V)
+{
+    int g = blockIdx.x;
+    const size_t src = (size_t)rows[g] * V;
+    const size_t dst = (size_t)g * V;
+    for (int v = threadIdx.x; v < V; v += blockDim.x)
+        out[dst + v] = logits[src + v];
+}
+
+static inline void launch_gather_logits_rows(
+    const __half* logits, const int* rows, __half* out, int G, int V,
+    cudaStream_t stream)
+{
+    gather_logits_rows_kernel<<<G, 256, 0, stream>>>(logits, rows, out, V);
+}
+
+// Scale each row of a [R, V] FP16 tensor by its own per-token scalar.
+__global__ void scale_rows_fp16_kernel(
+    __half* __restrict__ d, const float* __restrict__ scale, int R, int V)
+{
+    int r = blockIdx.x;
+    float s = (r < R) ? scale[r] : 0.0f;
+    size_t base = (size_t)r * V;
+    for (int v = threadIdx.x; v < V; v += blockDim.x)
+        d[base + v] = __float2half(__half2float(d[base + v]) * s);
+}
+
+static inline void launch_scale_rows_fp16(
+    __half* d, const float* scale, int R, int V, cudaStream_t stream)
+{
+    scale_rows_fp16_kernel<<<R, 256, 0, stream>>>(d, scale, R, V);
+}
+
+// ─── Host-side top-k + temperature sampling over a [G, V] logits buffer ───
+// Returns the sampled token per alive sequence; fills next_tok[g] (or -1 if
+// the sequence is already dead). EOS stops the sequence.
+static void sample_top_k_host(
+    const std::vector<__half>& logits,   // [G, V], logits for current position
+    const std::vector<int>& alive,       // alive[g] != 0
+    std::vector<int>& next_tok,          // out
+    int G, int V, float temp, int top_k,
+    std::mt19937& rng)
+{
+    for (int g = 0; g < G; g++) {
+        if (!alive[g]) { next_tok[g] = -1; continue; }
+        const __half* row = &logits[(size_t)g * V];
+        if (temp <= 0.0f) {
+            int best = 0; float bestv = -1e30f;
+            for (int v = 0; v < V; v++) {
+                float f = __half2float(row[v]);
+                if (f > bestv) { bestv = f; best = v; }
+            }
+            next_tok[g] = best;
+            continue;
+        }
+        // Temperature softmax
+        std::vector<float> probs(V);
+        float max_l = -1e30f;
+        for (int v = 0; v < V; v++) max_l = fmaxf(max_l, __half2float(row[v]));
+        float sum = 0.0f;
+        for (int v = 0; v < V; v++) {
+            probs[v] = expf((__half2float(row[v]) - max_l) / temp);
+            sum += probs[v];
+        }
+        if (sum < 1e-8f) { next_tok[g] = 0; continue; }
+        for (int v = 0; v < V; v++) probs[v] /= sum;
+
+        // Top-K filter
+        if (top_k > 0 && top_k < V) {
+            std::vector<int> idx(V);
+            std::iota(idx.begin(), idx.end(), 0);
+            std::partial_sort(idx.begin(), idx.begin() + top_k, idx.end(),
+                              [&](int a, int b){ return probs[a] > probs[b]; });
+            float s_topk = 0.0f;
+            for (int i = 0; i < top_k; i++) s_topk += probs[idx[i]];
+            std::vector<float> topk_vals(top_k);
+            for (int i = 0; i < top_k; i++) topk_vals[i] = probs[idx[i]];
+            std::fill(probs.begin(), probs.end(), 0.0f);
+            if (s_topk > 1e-8f)
+                for (int i = 0; i < top_k; i++) probs[idx[i]] = topk_vals[i] / s_topk;
+        }
+
+        // Multinomial sample
+        float total = 0.0f;
+        for (float p : probs) total += p;
+        if (total <= 1e-8f) { next_tok[g] = 0; continue; }
+        std::uniform_real_distribution<float> u(0.0f, 1.0f);
+        float r = u(rng) * total, cum = 0.0f;
+        int tok = V - 1;
+        for (int v = 0; v < V; v++) {
+            cum += probs[v];
+            if (r <= cum) { tok = v; break; }
+        }
+        next_tok[g] = tok;
+    }
 }
 
 // ─── Shared training-state (params, master, optimizer, grads, dims) ─────────
@@ -517,14 +680,31 @@ int main(int argc, char** argv) {
         else if (arg == "--ddp")                     g_use_ddp = true;
         else if (arg == "--num_gpus" && i+1 < argc)  g_num_gpus = std::stoi(argv[++i]);
         else if (arg == "--resume")                  g_resume = true;
+        else if (arg == "--rl_dir" && i+1 < argc)    g_rl_dir = argv[++i];
+        else if (arg == "--n_samples" && i+1 < argc) g_rl_n_samples = std::stoi(argv[++i]);
+        else if (arg == "--rl_max_new" && i+1 < argc) g_rl_max_new = std::stoi(argv[++i]);
+        else if (arg == "--rl_beta" && i+1 < argc)   g_rl_beta = std::stof(argv[++i]);
+        else if (arg == "--rl_temp" && i+1 < argc)   g_rl_temp = std::stof(argv[++i]);
+        else if (arg == "--rl_top_k" && i+1 < argc)  g_rl_top_k = std::stoi(argv[++i]);
+        else if (arg == "--verifier_cmd" && i+1 < argc) g_verifier_cmd = argv[++i];
+        else if (arg == "--rl_workdir" && i+1 < argc) g_rl_workdir = argv[++i];
         else if (arg == "--help") {
-            printf("Usage: train_sft_cuda --stage <2|3|4> [options]\n");
+            printf("Usage: train_sft_cuda --stage <2|3|4|5> [options]\n");
             printf("  --stage 2          SFT (Supervised Fine-Tuning)\n");
             printf("  --stage 3          DPO (Direct Preference Optimization)\n");
             printf("  --stage 4          Phone Adapter\n");
+            printf("  --stage 5          RL (GRPO-lite, rule-based verifier)\n");
             printf("  --base_model       Pretrained model checkpoint\n");
             printf("  --sft_dir          SFT data directory\n");
             printf("  --dpo_dir          DPO data directory\n");
+            printf("  --rl_dir           RL data directory (JSONL verifiable tasks)\n");
+            printf("  --n_samples        RL completions sampled per prompt [6]\n");
+            printf("  --rl_max_new       RL max new tokens per completion [80]\n");
+            printf("  --rl_beta          RL KL penalty coefficient [0.1]\n");
+            printf("  --rl_temp          RL sampling temperature [0.8]\n");
+            printf("  --rl_top_k         RL top-k sampling [50]\n");
+            printf("  --verifier_cmd     Verifier command (req.jsonl out.jsonl) [python3 scripts/rl_verifier.py]\n");
+            printf("  --rl_workdir       RL scratch dir for verifier I/O [rl_work]\n");
             printf("  --batch_size       Batch size [4]\n");
             printf("  --epochs           Number of epochs [3]\n");
             printf("  --lr               Learning rate [3e-5]\n");
@@ -562,7 +742,7 @@ int main(int argc, char** argv) {
     cuda::nvml_init();
 #endif
 
-    const char* stage_names[] = {"", "", "SFT", "DPO", "Phone"};
+    const char* stage_names[] = {"", "", "SFT", "DPO", "Phone", "RL"};
     printf("\n[Stage %d: %s] 204M model | FP16 | batch=%d | seq=%d | lr=%.1e%s\n",
            g_stage, stage_names[g_stage], g_batch_size, g_max_seq, g_lr,
            g_use_ddp ? " | DDP x2" : "");
@@ -644,7 +824,7 @@ int main(int argc, char** argv) {
     cuda::sync_compute();
 
     // ─── Resume state (populated by --resume block below) ─────────────────
-    const char* stage_tag_early = (g_stage == 2) ? "sft" : (g_stage == 3) ? "dpo" : "phone";
+    const char* stage_tag_early = (g_stage == 2) ? "sft" : (g_stage == 3) ? "dpo" : (g_stage == 4) ? "phone" : "rl";
     int   start_step   = 0;
     int   start_epoch  = 0;
     size_t start_sample_idx = 0;
@@ -737,7 +917,7 @@ int main(int argc, char** argv) {
     //   ckpt_<tag>_optim.safetensors — FP32 optimizer m,v (single file, overwritten)
     //   train_state_<tag>.txt        — step, epoch, sample_idx (single file, overwritten)
     // where <tag> = sft | dpo | phone (derived from stage).
-    const char* stage_tag = (g_stage == 2) ? "sft" : (g_stage == 3) ? "dpo" : "phone";
+    const char* stage_tag = (g_stage == 2) ? "sft" : (g_stage == 3) ? "dpo" : (g_stage == 4) ? "phone" : "rl";
 
     auto save_stage_checkpoint = [&](const std::string& suffix,
                                      int cur_step = -1, int cur_epoch = -1,
@@ -1194,6 +1374,344 @@ int main(int argc, char** argv) {
         save_stage_checkpoint("_dpo_final", step, g_epochs, 0);
         printf("\n[DONE] DPO complete. %d steps.\n", step);
         trigger_upload(step, "dpo");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Stage 5: RL — GRPO-lite with rule-based verifier (coding)
+    //
+    // Per training step:
+    //   1. Sample N completions per prompt from the policy (top-k + temp).
+    //   2. Decode code, run rule-based verifier (executes code, compares stdout).
+    //   3. Group-normalised advantage A[g] = (r - mean)/(std+eps) per prompt.
+    //   4. Per-token KL penalty vs reference: kl_t = loss_pol - loss_ref.
+    //   5. Backprop CE gradient scaled by (A[g] - beta*kl_t)/Nt[g].
+    // ═══════════════════════════════════════════════════════════════════════
+    else if (g_stage == 5) {
+        auto rl_samples = load_rl_data(g_rl_dir, tok, g_max_seq);
+        if (rl_samples.empty()) {
+            fprintf(stderr, "[ERR] No RL data found in %s\n", g_rl_dir.c_str());
+            return 1;
+        }
+
+        // Reference model (frozen) for the KL penalty.
+        std::string ref_path = g_ref_model.empty() ? g_base_model : g_ref_model;
+        auto ref_params = load_model(ref_path);
+        printf("[RL] Reference model: %s\n", ref_path.c_str());
+
+        const int ddp_w = ddp_world();
+        const int ddp_r = ddp_rank();
+        const size_t global_bs = (size_t)g_batch_size * (size_t)ddp_w;
+
+        int total_steps = (int)((size_t)g_epochs * rl_samples.size() / global_bs);
+        if (total_steps < 1) total_steps = 1;
+        if (g_max_steps > 0) total_steps = std::min(total_steps, g_max_steps);
+
+        fs::create_directories(g_rl_workdir);
+
+        auto t0 = Clock::now();
+        int step = start_step;
+        float running_loss = 0.0f, running_rew = 0.0f;
+
+        // Forward + logits (no grad) for reference log-prob use.
+        auto forward_logits = [&](std::vector<cuda::CudaTensor>& p,
+                                  const cuda::CudaTensor& d_tok_in, int B, int S) {
+            ts::FwdCache cache;
+            st.dims.B = B; st.dims.S = S;
+            cuda::CudaTensor x = ts::forward(p, d_tok_in, st.dims,
+                                             rope_cos, rope_sin, cache);
+            cuda::CudaTensor logits = cuda::matmul_transb(x, p[0]);
+            cuda::sync_compute();
+            return logits;
+        };
+
+        for (int epoch = start_epoch; epoch < g_epochs && !g_stop; epoch++) {
+            // Same seed on every rank => same shuffle => disjoint slices.
+            std::mt19937 rng(42 + epoch);
+            std::shuffle(rl_samples.begin(), rl_samples.end(), rng);
+
+            size_t bi_start = (epoch == start_epoch) ? start_sample_idx : 0;
+            bi_start = (bi_start / global_bs) * global_bs;
+
+            for (size_t bi = bi_start; bi + global_bs <= rl_samples.size() && !g_stop;
+                 bi += global_bs) {
+                if (g_max_steps > 0 && step >= g_max_steps) break;
+
+                const size_t base = bi + (size_t)ddp_r * (size_t)g_batch_size;
+                const int P = g_batch_size;      // prompts in this batch
+                const int N = g_rl_n_samples;    // samples per prompt
+                const int G = P * N;             // total sequences
+
+                // ── 1. Sample N completions per prompt ──────────────────────
+                std::vector<std::vector<int>> seq_tokens(G);
+                std::vector<int> plen(G), gen_len(G, 0);
+                int max_prompt = 0;
+                for (int p = 0; p < P; p++) {
+                    auto& s = rl_samples[base + p];
+                    int m = std::min((int)s.prompt_tokens.size(), g_max_seq - 1);
+                    max_prompt = std::max(max_prompt, m);
+                    for (int n = 0; n < N; n++) {
+                        int g = p * N + n;
+                        seq_tokens[g].assign(s.prompt_tokens.begin(),
+                                             s.prompt_tokens.begin() + m);
+                        plen[g] = (int)seq_tokens[g].size();
+                    }
+                }
+                int Lmax = max_prompt + g_rl_max_new;
+                std::vector<int> tok_buf((size_t)G * Lmax, TOK_PAD);
+                for (int g = 0; g < G; g++)
+                    for (int i = 0; i < plen[g]; i++)
+                        tok_buf[(size_t)g * Lmax + i] = seq_tokens[g][i];
+
+                std::vector<int> alive(G, 1);
+                std::vector<int> next_tok(G);
+                std::vector<int> row_idx(G);
+                std::vector<__half> gathered_logits((size_t)G * MODEL_VOCAB);
+                std::mt19937 sampler_rng(1234 + step + ddp_r);
+
+                for (int t = 0; t < g_rl_max_new; t++) {
+                    int L = max_prompt + t;
+                    std::vector<int> tok_slice((size_t)G * L);
+                    for (int g = 0; g < G; g++)
+                        for (int i = 0; i < L; i++)
+                            tok_slice[(size_t)g * L + i] = tok_buf[(size_t)g * Lmax + i];
+
+                    auto d_tok_rs = cuda::CudaTensor::from_host(tok_slice.data(), {G, L});
+                    auto logits = forward_logits(params, d_tok_rs, G, L);
+
+                    for (int g = 0; g < G; g++)
+                        row_idx[g] = (g * L) + plen[g] + t - 1;
+
+                    auto d_row_idx = cuda::CudaTensor::from_host(row_idx.data(), {G});
+                    cuda::CudaTensor d_rows({(int64_t)G, (int64_t)MODEL_VOCAB}, cuda::DType::FP16);
+                    launch_gather_logits_rows((const __half*)logits.data,
+                                              (const int*)d_row_idx.data,
+                                              (__half*)d_rows.data, G, MODEL_VOCAB,
+                                              cuda::ctx.compute_stream);
+                    cuda::sync_compute();
+                    d_rows.copy_to_host(gathered_logits);
+
+                    sample_top_k_host(gathered_logits, alive, next_tok,
+                                      G, MODEL_VOCAB, g_rl_temp, g_rl_top_k,
+                                      sampler_rng);
+
+                    bool any_alive = false;
+                    for (int g = 0; g < G; g++) {
+                        if (!alive[g]) continue;
+                        int gidx = plen[g] + t;
+                        if (gidx < Lmax) tok_buf[(size_t)g * Lmax + gidx] = next_tok[g];
+                        gen_len[g]++;
+                        if (next_tok[g] == TOK_EOS) alive[g] = 0;
+                        else any_alive = true;
+                    }
+                    if (!any_alive) break;
+                }
+                // Finalise sequences (prompt + completion).
+                for (int g = 0; g < G; g++) {
+                    seq_tokens[g].resize(plen[g] + gen_len[g]);
+                    for (int i = 0; i < gen_len[g]; i++)
+                        seq_tokens[g][plen[g] + i] = tok_buf[(size_t)g * Lmax + plen[g] + i];
+                }
+
+                // ── 2. Decode + run rule-based verifier ─────────────────────
+                std::string req_path = g_rl_workdir + "/req.jsonl";
+                std::string rew_path = g_rl_workdir + "/reward.jsonl";
+                {
+                    std::ofstream rf(req_path);
+                    auto esc = [](const std::string& x) {
+                        std::string o;
+                        for (char c : x) {
+                            if (c == '"' || c == '\\') o += '\\';
+                            else if (c == '\n') o += "\\n";
+                            else if (c == '\r') o += "\\r";
+                            else if (c == '\t') o += "\\t";
+                            else o += c;
+                        }
+                        return o;
+                    };
+                    for (int g = 0; g < G; g++) {
+                        int p = g / N;
+                        auto& s = rl_samples[base + p];
+                        std::vector<TokenID> comp(seq_tokens[g].begin() + plen[g],
+                                                  seq_tokens[g].end());
+                        std::string code = tok.decode(comp, true);
+                        rf << "{\"id\":" << g
+                           << ",\"lang\":\"" << ((s.lang == "ja") ? "ja" : "en") << "\""
+                           << ",\"code\":\"" << esc(code) << "\""
+                           << ",\"input\":\"" << esc(s.mock_input) << "\""
+                           << ",\"expected\":\"" << esc(s.expected_output) << "\"}\n";
+                    }
+                    rf.close();
+                }
+                std::string cmd = g_verifier_cmd + " " + req_path + " " + rew_path;
+                int rc = system(cmd.c_str());
+                if (rc != 0)
+                    fprintf(stderr, "[RL][WARN] verifier failed (rc=%d), zero rewards\n", rc);
+
+                std::vector<float> rewards(G, 0.0f);
+                {
+                    std::ifstream wf(rew_path);
+                    std::string line;
+                    while (std::getline(wf, line)) {
+                        auto idp = line.find("\"id\":");
+                        auto rp = line.find("\"reward\":");
+                        if (idp == std::string::npos || rp == std::string::npos) continue;
+                        long id = std::strtol(line.c_str() + idp + 5, nullptr, 10);
+                        float r = (float)std::strtod(line.c_str() + rp + 9, nullptr);
+                        if (id >= 0 && id < G) rewards[id] = r;
+                    }
+                }
+
+                // ── 3. Group-normalised advantage ───────────────────────────
+                std::vector<float> adv(G, 0.0f);
+                for (int p = 0; p < P; p++) {
+                    float mean = 0.0f;
+                    for (int n = 0; n < N; n++) mean += rewards[p * N + n];
+                    mean /= (float)N;
+                    float var = 0.0f;
+                    for (int n = 0; n < N; n++) {
+                        float d = rewards[p * N + n] - mean;
+                        var += d * d;
+                    }
+                    var /= (float)N;
+                    float stdv = sqrtf(var) + 1e-8f;
+                    for (int n = 0; n < N; n++)
+                        adv[p * N + n] = (rewards[p * N + n] - mean) / stdv;
+                }
+
+                // ── 4+5. Token matrix, per-token KL, scaled backprop ────────
+                int S = 0;
+                for (int g = 0; g < G; g++)
+                    S = std::max(S, plen[g] + gen_len[g]);
+                if (S < 1) S = 1;
+                if (S > g_max_seq) S = g_max_seq;
+
+                std::vector<int> tok_mat((size_t)G * S, TOK_PAD);
+                std::vector<int> tgt_mat((size_t)G * S, TOK_PAD);
+                std::vector<float> mask((size_t)G * S, 0.0f);
+                std::vector<int> Nt(G, 0);
+                for (int g = 0; g < G; g++) {
+                    int real_end = std::min(plen[g] + gen_len[g], S);
+                    for (int i = 0; i < real_end; i++)
+                        tok_mat[(size_t)g * S + i] = seq_tokens[g][i];
+                    // Loss at positions [plen-1, real_end-2] predicts the
+                    // completion tokens (the last one is EOS if the model
+                    // stopped). This is exactly the sampled-token log-prob.
+                    int start_pred = plen[g] - 1;
+                    int end_pred = real_end - 2;
+                    for (int i = 0; i < real_end; i++) {
+                        tgt_mat[(size_t)g * S + i] = (i + 1 < real_end)
+                            ? seq_tokens[g][i + 1] : TOK_EOS;
+                        if (i >= start_pred && i <= end_pred) {
+                            mask[(size_t)g * S + i] = 1.0f;
+                            Nt[g]++;
+                        }
+                    }
+                }
+
+                auto d_tok_g  = cuda::CudaTensor::from_host(tok_mat.data(), {G, S});
+                auto d_tgt_g  = cuda::CudaTensor::from_host(tgt_mat.data(), {G, S});
+                auto d_mask_g = cuda::CudaTensor::from_host(mask.data(), {G, S});
+
+                // Policy forward + fused CE (loss + gradient).
+                ts::FwdCache cache;
+                st.dims.B = G; st.dims.S = S;
+                cuda::CudaTensor x_final = ts::forward(params, d_tok_g, st.dims,
+                                                       rope_cos, rope_sin, cache);
+                auto pol_logits = cuda::matmul_transb(x_final, params[0]);
+                int BS = G * S;
+                cuda::CudaTensor pol_loss({(int64_t)BS}, cuda::DType::F32);
+                cuda::CudaTensor d_logits({(int64_t)BS, (int64_t)MODEL_VOCAB}, cuda::DType::FP16);
+                launch_ce_fwd_bwd((const __half*)pol_logits.data, (const int*)d_tgt_g.data,
+                                  (const float*)d_mask_g.data,
+                                  (float*)pol_loss.data, (__half*)d_logits.data,
+                                  BS, MODEL_VOCAB, cuda::ctx.compute_stream);
+                cuda::sync_compute();
+
+                // Reference per-token loss for the KL term.
+                auto ref_logits = forward_logits(ref_params, d_tok_g, G, S);
+                cuda::CudaTensor ref_loss({(int64_t)BS}, cuda::DType::F32);
+                cuda::CudaTensor dummy_dl({(int64_t)BS, (int64_t)MODEL_VOCAB}, cuda::DType::FP16);
+                launch_ce_fwd_bwd((const __half*)ref_logits.data, (const int*)d_tgt_g.data,
+                                  (const float*)d_mask_g.data,
+                                  (float*)ref_loss.data, (__half*)dummy_dl.data,
+                                  BS, MODEL_VOCAB, cuda::ctx.compute_stream);
+                cuda::sync_compute();
+
+                std::vector<float> h_pol(BS), h_ref(BS);
+                cudaMemcpy(h_pol.data(), pol_loss.data, BS * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaMemcpy(h_ref.data(), ref_loss.data, BS * sizeof(float), cudaMemcpyDeviceToHost);
+                cuda::sync_compute();
+
+                // Per-token scale for the CE gradient:
+                //   r_t  = logp_ref - logp_pol = loss_pol - loss_ref
+                //   scale_t = (A[g] - beta*(1 - exp(r_t))) / Nt[g]
+                // The KL term uses the kl-1 estimator exp(r)-r-1, whose
+                // gradient contributes -beta*(1-exp(r)) per token.
+                std::vector<float> scale(BS, 0.0f);
+                double loss_sum = 0.0; int mask_count = 0;
+                for (int g = 0; g < G; g++) {
+                    int nt = Nt[g];
+                    if (nt <= 0) continue;
+                    for (int i = 0; i < S; i++) {
+                        int idx = g * S + i;
+                        if (mask[idx] <= 0.0f) continue;
+                        float r_t = h_pol[idx] - h_ref[idx];
+                        scale[idx] = (adv[g] - g_rl_beta * (1.0f - expf(r_t))) / (float)nt;
+                        loss_sum += h_pol[idx];
+                        mask_count++;
+                    }
+                }
+                float loss_val = mask_count > 0 ? (float)(loss_sum / mask_count) : 0.0f;
+
+                auto d_scale = cuda::CudaTensor::from_host(scale.data(), {BS});
+                launch_scale_rows_fp16((__half*)d_logits.data,
+                                       (const float*)d_scale.data,
+                                       BS, MODEL_VOCAB, cuda::ctx.compute_stream);
+                cuda::sync_compute();
+
+                // Backward (weight-tying handled like SFT/DPO).
+                auto dx_final = cuda::matmul(d_logits, params[0]);
+                auto d_embed_out = cuda::matmul(d_logits, x_final, true, false);
+                launch_f16_to_f32_seed((const __half*)d_embed_out.data,
+                                       (float*)st.grads.embed_accum.data,
+                                       (size_t)MODEL_VOCAB * D_MODEL, cuda::ctx.compute_stream);
+                ts::backward(params, d_tok_g, x_final, dx_final, st.dims,
+                             rope_cos, rope_sin, cache, st.grads);
+
+#ifdef USE_DDP
+                ddp_allreduce(st.grads);
+#endif
+                clip_grads(st.grads, g_grad_clip);
+                float lr = sched_lr(step, total_steps);
+                adamw_all(params, master_params, opt_m, opt_v, st.grads, lr, 0.005f, step);
+
+                step++;
+                float mean_rew = 0.0f;
+                for (float r : rewards) mean_rew += r;
+                mean_rew /= (float)G;
+                running_loss += loss_val;
+                running_rew += mean_rew;
+
+                if (step % g_log_every == 0) {
+#ifdef USE_DDP
+                    if (!g_use_ddp || cuda::ddp::is_main())
+#endif
+                    {
+                        double elapsed = std::chrono::duration<double>(Clock::now() - t0).count();
+                        printf("[RL] ep=%d step=%d/%d loss=%.4f reward=%.3f lr=%.2e %.1f tok/s\n",
+                               epoch + 1, step, total_steps,
+                               running_loss / g_log_every, running_rew / g_log_every,
+                               lr, (double)(step - start_step) * (double)G * S / elapsed);
+                    }
+                    running_loss = 0.0f; running_rew = 0.0f;
+                }
+                if (step % g_save_every == 0)
+                    save_stage_checkpoint("_rl", step, epoch, bi + global_bs);
+            }
+        }
+        save_stage_checkpoint("_rl_final", step, g_epochs, 0);
+        printf("\n[DONE] RL complete. %d steps.\n", step);
+        trigger_upload(step, "rl");
     }
 
     cudaFree(rope_cos);

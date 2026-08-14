@@ -1,134 +1,162 @@
 {
-  "model": "translation_resources/fact_complete/ckpt_sft_final.safetensors",
-  "num": 100,
+  "model": "translation_resources/facts/ckpt_sft_final.safetensors",
+  "num": 20,
   "lang_ok_pct": {
-    "en": 34.0,
+    "en": 80.0,
     "ja": 100.0
   },
+  "attr_ok_pct": {
+    "en": 30.0,
+    "ja": 70.0
+  },
+  "value_hit_pct": {
+    "en": 20.0,
+    "ja": 40.0
+  },
   "content_hit": {
-    "en": 19.8,
-    "ja": 39.4
+    "en": 35.0,
+    "ja": 61.8
   },
   "samples": [
     {
-      "lang": "ja",
-      "q": "マーシャル諸島について説明してください。",
-      "reference": "マーシャル諸島の公用語は英語です。",
-      "prediction": "公用語は英語です。"
-    },
-    {
-      "lang": "ja",
-      "q": "オーストリアについて興味があります。",
-      "reference": "オーストリアの首都はウィーンです。",
-      "prediction": "面積はおよそ83878.99平方キロメートルです。"
+      "lang": "en",
+      "category": "element_symbol",
+      "q": "Please tell me the chemical symbol of moscovium.",
+      "reference": "The chemical symbol of moscovium is Mc.",
+      "prediction": "1."
     },
     {
       "lang": "ja",
-      "q": "ガーナをご存知ですか？",
-      "reference": "ガーナの国家元首はナナ・アクフォ＝アドです。",
-      "prediction": "通貨はセディです。"
+      "category": "currency",
+      "q": "リビアの通貨をご存知ですか？",
+      "reference": "リビアの通貨はリビア・ディナールです。",
+      "prediction": "ビセントリアンドゥカです。"
     },
     {
       "lang": "ja",
-      "q": "ウントリペンチウムは何ですか？",
-      "reference": "ウントリペンチウムの化学記号はUtpです。",
-      "prediction": "原子番号は135です。"
+      "category": "area",
+      "q": "カシュミール・スルターン朝の面積は何平方キロメートルですか？",
+      "reference": "カシュミール・スルターン朝の面積はおよそ250200平方キロメートルです。",
+      "prediction": "およそウランバートル面積はアジアにあります。"
     },
     {
       "lang": "en",
-      "q": "Do you happen to know the atomic number of gold?",
-      "reference": "The atomic number of gold is 79.",
-      "prediction": "人民幣はフランス・ルピーです。"
-    },
-    {
-      "lang": "en",
-      "q": "What do you think the population of Antigua and Barbuda is?",
-      "reference": "The population of Antigua and Barbuda is about 101489.",
-      "prediction": "面積はおよそ公用語の英語です。"
-    },
-    {
-      "lang": "en",
-      "q": "Could you clarify the area of Seychelles?",
-      "reference": "The area of Seychelles is about 459 square kilometers.",
-      "prediction": "Seychelles is about通貨は公用語です。"
-    },
-    {
-      "lang": "en",
-      "q": "What do you think the area of Sudan is?",
-      "reference": "The area of Sudan is about 1840687 square kilometers.",
-      "prediction": "Sudan is about 1840687 square kilometers."
+      "category": "official_language",
+      "q": "Tell me an official language of Cuba.",
+      "reference": "An official language of Cuba is Spanish.",
+      "prediction": "Cuba is in North America."
     },
     {
       "lang": "ja",
-      "q": "ウンビエンニウムを教えてもらえますか？",
-      "reference": "ウンビエンニウムの原子番号は129です。",
-      "prediction": "原子番号は12です。"
+      "category": "currency",
+      "q": "モンゴル国の通貨を教えてください。",
+      "reference": "モンゴル国の通貨はトゥグルグです。",
+      "prediction": "モンゴル国の通貨はトゥグルグです。"
     },
     {
       "lang": "en",
-      "q": "What can you tell me about the currency of Mongolia?",
-      "reference": "The currency of Mongolia is Mongolian tögrög.",
-      "prediction": "Mongolian rupee is Mongolian tögrög."
-    },
-    {
-      "lang": "en",
-      "q": "I am curious about an official language of South Africa.",
-      "reference": "An official language of South Africa is Swazi.",
-      "prediction": "首都はスターリングです。"
-    },
-    {
-      "lang": "ja",
-      "q": "カメルーンについて興味があります。",
-      "reference": "カメルーンの首都はヤウンデです。",
-      "prediction": "公用語は英語です。"
-    },
-    {
-      "lang": "en",
-      "q": "What can you tell me about an official language of Eswatini?",
-      "reference": "An official language of Eswatini is English.",
-      "prediction": "Swahili."
-    },
-    {
-      "lang": "en",
-      "q": "Please explain the area of Yemen.",
-      "reference": "The area of Yemen is about 455503 square kilometers.",
-      "prediction": "Yemen is about 455503 square kilometers."
-    },
-    {
-      "lang": "en",
-      "q": "Can you share what the highest point of Burundi is?",
+      "category": "highest_point",
+      "q": "I want to know the highest point of Burundi.",
       "reference": "The highest point of Burundi is Mount Heha.",
-      "prediction": "首都はバン面積のおよそ1759541平方キロメートルです。"
-    },
-    {
-      "lang": "ja",
-      "q": "ルテニウムについて何か言えますか？",
-      "reference": "ルテニウムの化学記号はRuです。",
-      "prediction": "人口はおよそ国家元首の面積です。"
+      "prediction": "Burundi is in Africa."
     },
     {
       "lang": "en",
-      "q": "Do you know an official language of North Macedonia?",
-      "reference": "An official language of North Macedonia is Macedonian.",
-      "prediction": "公用語は英語です。"
+      "category": "population",
+      "q": "I want to know the population of Guyana.",
+      "reference": "The population of Guyana is about 878674.",
+      "prediction": "Guyana is in South America."
     },
     {
       "lang": "ja",
-      "q": "モルディブについて何か言えますか？",
-      "reference": "モルディブで一番高い場所はヴィリンギリです。",
-      "prediction": "人口はおよそ国家元首のモハメド・ムイズです。"
+      "category": "continent_of",
+      "q": "セントルシアの大陸を教えてください。",
+      "reference": "セントルシアは北アメリカにあります。",
+      "prediction": "北アメリカはヨーロッパにあります。"
+    },
+    {
+      "lang": "en",
+      "category": "population",
+      "q": "Please tell me the population of Myanmar.",
+      "reference": "The population of Myanmar is about 53370609.",
+      "prediction": "291 Myanmar is in Asia."
+    },
+    {
+      "lang": "en",
+      "category": "capital",
+      "q": "Please tell me the capital city of Canada.",
+      "reference": "The capital of Canada is Ottawa.",
+      "prediction": "capital of Canada is Ottawa."
+    },
+    {
+      "lang": "en",
+      "category": "currency",
+      "q": "What money is used in North Korea?",
+      "reference": "The currency of North Korea is North Korean won.",
+      "prediction": "You are currency of North Korea."
+    },
+    {
+      "lang": "en",
+      "category": "highest_point",
+      "q": "I want to know the highest point of Andorra.",
+      "reference": "The highest point of Andorra is Coma Pedrosa.",
+      "prediction": "291 square kilometers."
     },
     {
       "lang": "ja",
-      "q": "バングラデシュについて言ってください。",
-      "reference": "バングラデシュの公用語はベンガル語です。",
-      "prediction": "通貨はタカです。"
+      "category": "capital",
+      "q": "日本の首都を知りたいです。",
+      "reference": "日本の首都は東京都です。",
+      "prediction": "日本の首都は東京です。"
     },
     {
       "lang": "ja",
-      "q": "ジンバブエをご存知ですか？",
-      "reference": "ジンバブエの通貨はジンバブエ・ゴールドです。",
-      "prediction": "原子番号は92です。"
+      "category": "highest_point",
+      "q": "フランスで一番高い場所はどこですか？",
+      "reference": "フランスで一番高い場所はモンブランです。",
+      "prediction": "面積はおよそ8平方キロメートルです。"
+    },
+    {
+      "lang": "ja",
+      "category": "population",
+      "q": "イスラエルの人口をご存知ですか？",
+      "reference": "イスラエルの人口はおよそ9840000人です。",
+      "prediction": "人口はおよそ9840000平方キロメートルです。"
+    },
+    {
+      "lang": "ja",
+      "category": "capital",
+      "q": "東ティモールの首都を答えてください。",
+      "reference": "東ティモールの首都はディリです。",
+      "prediction": "人口はおよそ14878984人です。"
+    },
+    {
+      "lang": "ja",
+      "category": "element_symbol",
+      "q": "ユウロピウムの化学記号をご存知ですか？",
+      "reference": "ユウロピウムの化学記号はEuです。",
+      "prediction": "アオキシリウムの化学記号はUhoです。"
+    },
+    {
+      "lang": "en",
+      "category": "element_symbol",
+      "q": "Can you give the chemical symbol of manganese?",
+      "reference": "The chemical symbol of manganese is Mn.",
+      "prediction": "10 Austria島化学記号は100です。"
+    },
+    {
+      "lang": "ja",
+      "category": "continent_of",
+      "q": "ブルンジがある大陸はどこですか？",
+      "reference": "ブルンジはアフリカにあります。",
+      "prediction": "オセアニアはアフリカにあります。"
+    },
+    {
+      "lang": "en",
+      "category": "continent_of",
+      "q": "What continent is Kyrgyzstan in?",
+      "reference": "Kyrgyzstan is in Asia.",
+      "prediction": "Kyrgyzstan is in Asia."
     }
   ]
 }

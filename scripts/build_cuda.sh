@@ -41,5 +41,5 @@ make -j$(nproc)
 echo ""
 echo "✓ Build complete. Binaries:"
 echo "  build/train_pretrain_cuda  — Stage 1: Pretraining"
-echo "  build/train_sft_cuda       — Stage 2-4: SFT/DPO/Phone"
+echo "  build/train_sft_cuda       — Stage 2-5: SFT/DPO/Phone/RL"
 echo ""
