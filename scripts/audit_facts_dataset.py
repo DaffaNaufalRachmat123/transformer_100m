@@ -7,10 +7,10 @@ imbalance. Designed for sft_data/sft_facts_strict/{train,eval}.jsonl.
 """
 
 import argparse
+from collections import Counter, defaultdict
 import json
 import re
 import sys
-from collections import Counter, defaultdict
 from pathlib import Path
 
 
@@ -23,7 +23,7 @@ GENERIC_EN = re.compile(
     r"i am curious about|would you tell me about|can you explain|"
     r"what is known about|tell me what you know about|please explain|"
     r"what do you think)\b(?!.*\b(capital|currency|official language|population|"
-    r"highest point|highest place|continent|area|chemical symbol|atomic number|"
+    r"highest point|highest-point|highest place|continent|area|chemical symbol|chemical-symbol|atomic number|atomic-number|"
     r"people live|money|element)\b)",
     re.I,
 )
@@ -44,6 +44,7 @@ EN_ATTR_MARKERS = [
     "continent", "area", "chemical symbol", "atomic number", "language is official",
     "language", "official in", "capital city", "money", "officially used",
     "highest place", "square kilometers", "symbol represents", "element", "people live",
+    "chemical-symbol", "atomic-number", "highest-point",
 ]
 
 
@@ -72,10 +73,24 @@ def is_generic(lang, q):
     return False
 
 
+def pct(num, den):
+    return num / max(den, 1)
+
+
+def normalize_subject(value):
+    value = (value or "").strip().casefold()
+    value = re.sub(r"\s+", " ", value)
+    return value
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("paths", nargs="*", default=["sft_data/sft_facts_strict/train.jsonl", "sft_data/sft_facts_strict/eval.jsonl"])
     ap.add_argument("--max_category_share", type=float, default=0.30)
+    ap.add_argument("--max_exact_dup_rate", type=float, default=1.0,
+                    help="Fail if exact duplicate text rows exceed this fraction. Default disables the check.")
+    ap.add_argument("--min_multi_category_subject_share", type=float, default=0.0,
+                    help="Fail if the share of subjects covered by 2+ categories is below this threshold. Default disables the check.")
     args = ap.parse_args()
 
     rows = []
@@ -99,12 +114,27 @@ def main():
     qid = []
     lang_mismatch = []
     bad_format = []
+    category_by_lang = defaultdict(Counter)
+    subject_categories = defaultdict(lambda: defaultdict(set))
+    variant_counts = Counter()
+    fact_id_counts = Counter()
+    text_counts = Counter()
 
     for path, line_no, r, q, a in rows:
         lang = r.get("lang")
         cat = r.get("category", "")
         langs[lang] += 1
         cats[cat] += 1
+        category_by_lang[lang][cat] += 1
+        if r.get("variant"):
+            variant_counts[r.get("variant")] += 1
+        if r.get("fact_id"):
+            fact_id_counts[r.get("fact_id")] += 1
+        if r.get("text"):
+            text_counts[r.get("text")] += 1
+        subject_key = normalize_subject(r.get("subject_en") or r.get("subject_ja"))
+        if subject_key and cat:
+            subject_categories[lang][subject_key].add(cat)
         if q is None or a is None:
             bad_format.append((path, line_no))
             continue
@@ -118,10 +148,23 @@ def main():
             lang_mismatch.append((path, line_no, lang, q, a))
         prompt_answers[(lang, q)].add(a)
         if cat and r.get("subject_en"):
-            fact_values[(cat, r.get("subject_en", "").casefold(), lang)].add(a)
+            value = r.get("value_en") if lang == "en" else r.get("value_ja")
+            fact_values[(cat, r.get("subject_en", "").casefold(), lang)].add(value or a)
 
     prompt_conflicts = [(k, v) for k, v in prompt_answers.items() if len(v) > 1]
     fact_conflicts = [(k, v) for k, v in fact_values.items() if len(v) > 1]
+    exact_dups = sum(count - 1 for count in text_counts.values() if count > 1)
+    exact_dup_rate = pct(exact_dups, len(rows))
+    multi_category_stats = {}
+    for lang, subject_map in subject_categories.items():
+        total_subjects = len(subject_map)
+        multi_category = sum(1 for cats_for_subject in subject_map.values() if len(cats_for_subject) >= 2)
+        multi_category_stats[lang] = {
+            "subjects": total_subjects,
+            "multi_category_subjects": multi_category,
+            "share": pct(multi_category, total_subjects),
+        }
+
     if bad_format:
         errors.append(f"bad format rows: {len(bad_format)}")
     if qid:
@@ -138,16 +181,32 @@ def main():
         max_share = max(cats.values()) / len(rows)
         if max_share > args.max_category_share:
             errors.append(f"category imbalance: max share {max_share:.1%} > {args.max_category_share:.1%}")
+    if exact_dup_rate > args.max_exact_dup_rate:
+        errors.append(f"exact duplicate rate: {exact_dup_rate:.1%} > {args.max_exact_dup_rate:.1%}")
+    if args.min_multi_category_subject_share > 0.0:
+        for lang, stats in multi_category_stats.items():
+            if stats["share"] < args.min_multi_category_subject_share:
+                errors.append(
+                    f"multi-category subject share ({lang}): {stats['share']:.1%} < {args.min_multi_category_subject_share:.1%}"
+                )
 
     print("=" * 60)
     print(f"rows: {len(rows)}")
     print(f"langs: {dict(langs)}")
     print(f"categories: {dict(cats)}")
+    print(f"categories by lang: { {lang: dict(counter) for lang, counter in category_by_lang.items()} }")
     print(f"generic prompts: {len(generic)}")
     print(f"prompt conflicts: {len(prompt_conflicts)}")
     print(f"fact conflicts: {len(fact_conflicts)}")
     print(f"language mismatch: {len(lang_mismatch)}")
     print(f"QID/noise rows: {len(qid)}")
+    print(f"unique fact_ids: {len(fact_id_counts)}")
+    print(f"variants: {dict(variant_counts)}")
+    print(f"exact duplicate rows: {exact_dups} ({exact_dup_rate:.1%})")
+    print(
+        "multi-category subject share: "
+        f"{ {lang: {'subjects': stats['subjects'], 'multi_category_subjects': stats['multi_category_subjects'], 'share': round(stats['share'] * 100, 1)} for lang, stats in multi_category_stats.items()} }"
+    )
     print("=" * 60)
 
     for label, sample in [

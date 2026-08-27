@@ -176,6 +176,28 @@ void PretrainDataset::discover_files() {
         "indonesian", "english", "japanese", "mixed"
     };
 
+    // Trilingual mode: if the corpus has an indonesian/ dir with at least one
+    // usable file, switch sampling weights to EN 0.30 / JA 0.25 / ID 0.45.
+    // Bilingual corpora keep the original EN 0.55 / JA 0.45 split.
+    bool has_indonesian = false;
+    {
+        fs::path id_dir = fs::path(cfg_.corpus_root) / "indonesian";
+        if (fs::exists(id_dir)) {
+            for (const auto& entry : fs::directory_iterator(id_dir)) {
+                if (!entry.is_regular_file()) continue;
+                std::string ext = entry.path().extension().string();
+                if (ext == ".txt" || ext == ".jsonl" || ext == ".tsv") {
+                    has_indonesian = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (has_indonesian) {
+        std::cout << "[Dataset] Indonesian corpus detected — trilingual weights "
+                     "(EN 0.30 / JA 0.25 / ID 0.45)\n";
+    }
+
     for (const auto& dir_name : lang_dirs) {
         fs::path dir = fs::path(cfg_.corpus_root) / dir_name;
         if (!fs::exists(dir)) {
@@ -183,7 +205,7 @@ void PretrainDataset::discover_files() {
             continue;
         }
         Language lang = lang_from_dirname(dir_name);
-        float weight  = lang_sample_weight(lang, stage_idx_);
+        float weight  = lang_sample_weight(lang, stage_idx_, has_indonesian);
 
         for (const auto& entry : fs::directory_iterator(dir)) {
             if (!entry.is_regular_file()) continue;
@@ -281,8 +303,12 @@ void PretrainDataset::rebuild_distribution() {
 }
 
 void PretrainDataset::update_lang_weights() {
+    bool has_indonesian = false;
+    for (const auto& f : files_) {
+        if (f.lang == Language::Indonesian) { has_indonesian = true; break; }
+    }
     for (auto& f : files_) {
-        f.weight = lang_sample_weight(f.lang, (int)stage_idx_);
+        f.weight = lang_sample_weight(f.lang, (int)stage_idx_, has_indonesian);
     }
 }
 

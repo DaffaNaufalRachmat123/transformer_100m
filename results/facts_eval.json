@@ -1,162 +1,908 @@
 {
   "model": "translation_resources/facts/ckpt_sft_final.safetensors",
-  "num": 20,
+  "num": 50,
+  "sample_unit": "row",
   "lang_ok_pct": {
-    "en": 80.0,
+    "en": 100.0,
     "ja": 100.0
   },
   "attr_ok_pct": {
-    "en": 30.0,
-    "ja": 70.0
+    "en": 44.0,
+    "ja": 60.0
   },
   "value_hit_pct": {
-    "en": 20.0,
-    "ja": 40.0
+    "en": 48.0,
+    "ja": 48.0
   },
   "content_hit": {
-    "en": 35.0,
-    "ja": 61.8
+    "en": 57.4,
+    "ja": 53.9
+  },
+  "leakage": {
+    "en_ja_script": 0,
+    "ja_latin_only": 0
+  },
+  "fact_level": {
+    "en": {
+      "fact_ids": 25,
+      "any_hit_pct": 48.0,
+      "all_hit_pct": 48.0
+    },
+    "ja": {
+      "fact_ids": 23,
+      "any_hit_pct": 52.2,
+      "all_hit_pct": 47.8
+    }
+  },
+  "per_category": {
+    "en": {
+      "area": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 66.7,
+        "value_hit_pct": 66.7,
+        "content_hit_pct": 51.9
+      },
+      "capital": {
+        "n": 4,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 50.0,
+        "value_hit_pct": 50.0,
+        "content_hit_pct": 62.5
+      },
+      "continent_of": {
+        "n": 6,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 83.3,
+        "value_hit_pct": 83.3,
+        "content_hit_pct": 93.8
+      },
+      "element_symbol": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 50.0,
+        "value_hit_pct": 50.0,
+        "content_hit_pct": 64.3
+      },
+      "official_language": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 33.0
+      },
+      "highest_point": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 20.8
+      },
+      "element_number": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 100.0,
+        "content_hit_pct": 35.7
+      },
+      "population": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 37.5
+      },
+      "currency": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 50.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 50.0
+      }
+    },
+    "ja": {
+      "official_language": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 50.0,
+        "value_hit_pct": 50.0,
+        "content_hit_pct": 58.3
+      },
+      "currency": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 66.7,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 49.4
+      },
+      "continent_of": {
+        "n": 6,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 83.3,
+        "value_hit_pct": 50.0,
+        "content_hit_pct": 62.0
+      },
+      "highest_point": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 100.0,
+        "value_hit_pct": 66.7,
+        "content_hit_pct": 88.3
+      },
+      "area": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 33.3,
+        "value_hit_pct": 33.3,
+        "content_hit_pct": 47.0
+      },
+      "element_number": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 66.7,
+        "content_hit_pct": 16.7
+      },
+      "element_symbol": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 100.0,
+        "value_hit_pct": 100.0,
+        "content_hit_pct": 50.0
+      },
+      "capital": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 33.3,
+        "value_hit_pct": 33.3,
+        "content_hit_pct": 46.2
+      },
+      "population": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 100.0,
+        "value_hit_pct": 100.0,
+        "content_hit_pct": 66.7
+      }
+    }
+  },
+  "confusion": {
+    "en": {
+      "area": {
+        "area": 2,
+        "continent_of": 1
+      },
+      "capital": {
+        "continent_of": 2,
+        "capital": 2
+      },
+      "continent_of": {
+        "continent_of": 5,
+        "area": 1
+      },
+      "element_symbol": {
+        "element_symbol": 2
+      },
+      "official_language": {
+        "continent_of": 2
+      },
+      "highest_point": {
+        "continent_of": 3
+      },
+      "element_number": {
+        "element_number": 2
+      },
+      "population": {
+        "continent_of": 1
+      },
+      "currency": {
+        "currency": 1,
+        "continent_of": 1
+      }
+    },
+    "ja": {
+      "official_language": {
+        "official_language": 1,
+        "population": 1
+      },
+      "currency": {
+        "population": 1,
+        "currency": 2
+      },
+      "continent_of": {
+        "continent_of": 5,
+        "unknown": 1
+      },
+      "highest_point": {
+        "highest_point": 3
+      },
+      "area": {
+        "area": 1,
+        "unknown": 1,
+        "population": 1
+      },
+      "element_number": {
+        "element_number": 2,
+        "unknown": 1
+      },
+      "element_symbol": {
+        "element_symbol": 1
+      },
+      "capital": {
+        "capital": 1,
+        "population": 2
+      },
+      "population": {
+        "population": 1
+      }
+    }
+  },
+  "error_causes": {
+    "en": {
+      "other_fact:continent_of": 10,
+      "unknown": 2,
+      "marker:area": 1,
+      "subject_missing": 1
+    },
+    "ja": {
+      "marker:population": 3,
+      "unknown": 8,
+      "subject_missing": 8,
+      "same_subject:population": 2
+    }
   },
   "samples": [
     {
       "lang": "en",
-      "category": "element_symbol",
-      "q": "Please tell me the chemical symbol of moscovium.",
-      "reference": "The chemical symbol of moscovium is Mc.",
-      "prediction": "1."
-    },
-    {
-      "lang": "ja",
-      "category": "currency",
-      "q": "リビアの通貨をご存知ですか？",
-      "reference": "リビアの通貨はリビア・ディナールです。",
-      "prediction": "ビセントリアンドゥカです。"
-    },
-    {
-      "lang": "ja",
+      "fact_id": "area::eswatini",
       "category": "area",
-      "q": "カシュミール・スルターン朝の面積は何平方キロメートルですか？",
-      "reference": "カシュミール・スルターン朝の面積はおよそ250200平方キロメートルです。",
-      "prediction": "およそウランバートル面積はアジアにあります。"
+      "predicted_category": "area",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "How many square kilometers is Eswatini?",
+      "reference": "The area of Eswatini is about 17364 square kilometers.",
+      "prediction": "Eswatini is about 17364 square kilometers.",
+      "same_subject_matches": [
+        "area"
+      ]
     },
     {
-      "lang": "en",
+      "lang": "ja",
+      "fact_id": "official_language::latvia",
       "category": "official_language",
-      "q": "Tell me an official language of Cuba.",
-      "reference": "An official language of Cuba is Spanish.",
-      "prediction": "Cuba is in North America."
+      "predicted_category": "official_language",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "ラトビアの公用語について教えてください。",
+      "reference": "ラトビアの公用語はラトビア語です。",
+      "prediction": "ラトビアの公用語はラトビア語です。",
+      "same_subject_matches": [
+        "official_language"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "capital::kosovo",
+      "category": "capital",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Tell me the capital of Kosovo.",
+      "reference": "The capital of Kosovo is Pristina.",
+      "prediction": "Kosovo is in Europe.",
+      "same_subject_matches": []
     },
     {
       "lang": "ja",
+      "fact_id": "currency::sierra leone",
       "category": "currency",
-      "q": "モンゴル国の通貨を教えてください。",
-      "reference": "モンゴル国の通貨はトゥグルグです。",
-      "prediction": "モンゴル国の通貨はトゥグルグです。"
+      "predicted_category": "population",
+      "error_cause": "marker:population",
+      "subject_bound": false,
+      "q": "シエラレオネの通貨は何ですか？",
+      "reference": "シエラレオネの通貨はレオンです。",
+      "prediction": "人口はおよそ7557212人です。",
+      "same_subject_matches": []
     },
     {
       "lang": "en",
-      "category": "highest_point",
-      "q": "I want to know the highest point of Burundi.",
-      "reference": "The highest point of Burundi is Mount Heha.",
-      "prediction": "Burundi is in Africa."
+      "fact_id": "continent_of::kuwait",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "I want to know which continent Kuwait is in.",
+      "reference": "Kuwait is in Asia.",
+      "prediction": "Kuwait is in Asia.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
     },
     {
       "lang": "en",
-      "category": "population",
-      "q": "I want to know the population of Guyana.",
-      "reference": "The population of Guyana is about 878674.",
-      "prediction": "Guyana is in South America."
+      "fact_id": "continent_of::mali",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "What continent is Mali in?",
+      "reference": "Mali is in Africa.",
+      "prediction": "Mali is in Africa.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
     },
     {
       "lang": "ja",
+      "fact_id": "continent_of::japan",
       "category": "continent_of",
-      "q": "セントルシアの大陸を教えてください。",
-      "reference": "セントルシアは北アメリカにあります。",
-      "prediction": "北アメリカはヨーロッパにあります。"
+      "predicted_category": "continent_of",
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "日本の大陸について教えてください。",
+      "reference": "日本はアジアにあります。",
+      "prediction": "大陸はアジアです。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "highest_point::japan",
+      "category": "highest_point",
+      "predicted_category": "highest_point",
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "日本で一番高い場所を教えてください。",
+      "reference": "日本で一番高い場所は富士山です。",
+      "prediction": "大山で一番高い場所は富士山です。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "area::tonga",
+      "category": "area",
+      "predicted_category": "area",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "トンガの面積を教えてください。",
+      "reference": "トンガの面積はおよそ748.5平方キロメートルです。",
+      "prediction": "ストックホルム面積はおよそ748.5平方キロメートルです。",
+      "same_subject_matches": [
+        "area"
+      ]
     },
     {
       "lang": "en",
-      "category": "population",
-      "q": "Please tell me the population of Myanmar.",
-      "reference": "The population of Myanmar is about 53370609.",
-      "prediction": "291 Myanmar is in Asia."
+      "fact_id": "element_symbol::bismuth",
+      "category": "element_symbol",
+      "predicted_category": "element_symbol",
+      "error_cause": "unknown",
+      "subject_bound": true,
+      "q": "What symbol represents the element bismuth?",
+      "reference": "The chemical symbol of bismuth is Bi.",
+      "prediction": "bismuth is the chemical symbol of bismuth.",
+      "same_subject_matches": []
     },
     {
       "lang": "en",
+      "fact_id": "official_language::south sudan",
+      "category": "official_language",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Please tell me an official language of South Sudan.",
+      "reference": "An official language of South Sudan is English.",
+      "prediction": "South Sudan is in Africa.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "element_number::untriennium",
+      "category": "element_number",
+      "predicted_category": "element_number",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "ウントリエンニウムの原子番号は何ですか？",
+      "reference": "ウントリエンニウムの原子番号は139です。",
+      "prediction": "139です。",
+      "same_subject_matches": [
+        "element_number"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "highest_point::ghana",
+      "category": "highest_point",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": false,
+      "q": "Which place is the highest point of Ghana?",
+      "reference": "The highest point of Ghana is Mount Afadja.",
+      "prediction": "He is in Africa.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "area::angola",
+      "category": "area",
+      "predicted_category": null,
+      "error_cause": "unknown",
+      "subject_bound": true,
+      "q": "アンゴラの面積をご存知ですか？",
+      "reference": "アンゴラの面積はおよそ1246700平方キロメートルです。",
+      "prediction": "正確にいえば都はルアンダです。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "element_number::unquadbium",
+      "category": "element_number",
+      "predicted_category": "element_number",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Tell me the atomic number of unquadbium.",
+      "reference": "The atomic number of unquadbium is 142.",
+      "prediction": "unquadbium is 142.",
+      "same_subject_matches": [
+        "element_number"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "continent_of::saint kitts and nevis",
+      "category": "continent_of",
+      "predicted_category": "area",
+      "error_cause": "marker:area",
+      "subject_bound": true,
+      "q": "Tell me which continent Saint Kitts and Nevis is in.",
+      "reference": "Saint Kitts and Nevis is in North America.",
+      "prediction": "The area of Saint Kitts and Nevis is about 269.4 square kilometers.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "capital::liberia",
       "category": "capital",
-      "q": "Please tell me the capital city of Canada.",
-      "reference": "The capital of Canada is Ottawa.",
-      "prediction": "capital of Canada is Ottawa."
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Can you give the capital of Liberia?",
+      "reference": "The capital of Liberia is Monrovia.",
+      "prediction": "Liberia is in Africa.",
+      "same_subject_matches": []
     },
     {
       "lang": "en",
+      "fact_id": "population::north macedonia",
+      "category": "population",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "About how many people live in North Macedonia?",
+      "reference": "The population of North Macedonia is about 1836713.",
+      "prediction": "North Macedonia is in Europe.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "highest_point::palau",
+      "category": "highest_point",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Tell me the highest point of Palau.",
+      "reference": "The highest point of Palau is Mount Ngerchelchuus.",
+      "prediction": "Palau is in Asia.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "capital::saudi arabia",
+      "category": "capital",
+      "predicted_category": "capital",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Do you know the capital of Saudi Arabia?",
+      "reference": "The capital of Saudi Arabia is Riyadh.",
+      "prediction": "In Saudi Arabia, the capital of Saudi Arabia is Riyadh.",
+      "same_subject_matches": [
+        "capital"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "continent_of::mauritania",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "モーリタニアが属する大陸を知りたいです。",
+      "reference": "モーリタニアはアフリカにあります。",
+      "prediction": "アフリカはアフリカにあります。",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "element_symbol::ytterbium",
+      "category": "element_symbol",
+      "predicted_category": "element_symbol",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "イッテルビウムの化学記号は何ですか？",
+      "reference": "イッテルビウムの化学記号はYbです。",
+      "prediction": "化学記号はYbです。",
+      "same_subject_matches": [
+        "element_symbol"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "capital::kyrgyzstan",
+      "category": "capital",
+      "predicted_category": "capital",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "キルギスで首都とされる都市はどこですか？",
+      "reference": "キルギスの首都はビシュケクです。",
+      "prediction": "キルギスの首都はビシュケクです。",
+      "same_subject_matches": [
+        "capital"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "continent_of::japan",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "日本はどの大陸にありますか？",
+      "reference": "日本はアジアにあります。",
+      "prediction": "大陸はアジアです。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "continent_of::sudan",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "スーダンはどの大陸にありますか？",
+      "reference": "スーダンはアフリカにあります。",
+      "prediction": "スーダンはアフリカにあります。",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "continent_of::nicaragua",
+      "category": "continent_of",
+      "predicted_category": null,
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "ニカラグアはどの大陸に属しますか？",
+      "reference": "ニカラグアは北アメリカにあります。",
+      "prediction": "にあります。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "capital::suriname",
+      "category": "capital",
+      "predicted_category": "capital",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "What is the capital of Suriname?",
+      "reference": "The capital of Suriname is Paramaribo.",
+      "prediction": "capital of Suriname is Paramaribo.",
+      "same_subject_matches": [
+        "capital"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "highest_point::kingdom of the netherlands",
+      "category": "highest_point",
+      "predicted_category": "highest_point",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "オランダ王国の最高地点を知りたいです。",
+      "reference": "オランダ王国で一番高い場所はシーナリー山です。",
+      "prediction": "オランダ王国で一番高い場所はシーナリー山です。",
+      "same_subject_matches": [
+        "highest_point"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "element_number::unbibium",
+      "category": "element_number",
+      "predicted_category": "element_number",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "Tell me the atomic number of unbibium.",
+      "reference": "The atomic number of unbibium is 122.",
+      "prediction": "un terbium is 122.",
+      "same_subject_matches": [
+        "element_number"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "currency::laos",
       "category": "currency",
-      "q": "What money is used in North Korea?",
-      "reference": "The currency of North Korea is North Korean won.",
-      "prediction": "You are currency of North Korea."
-    },
-    {
-      "lang": "en",
-      "category": "highest_point",
-      "q": "I want to know the highest point of Andorra.",
-      "reference": "The highest point of Andorra is Coma Pedrosa.",
-      "prediction": "291 square kilometers."
+      "predicted_category": "currency",
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "ラオスの通貨をご存知ですか？",
+      "reference": "ラオスの通貨はキープです。",
+      "prediction": "通貨はキープです。",
+      "same_subject_matches": []
     },
     {
       "lang": "ja",
-      "category": "capital",
-      "q": "日本の首都を知りたいです。",
-      "reference": "日本の首都は東京都です。",
-      "prediction": "日本の首都は東京です。"
+      "fact_id": "official_language::republic of the congo",
+      "category": "official_language",
+      "predicted_category": "population",
+      "error_cause": "marker:population",
+      "subject_bound": false,
+      "q": "コンゴ共和国の公用語を知りたいです。",
+      "reference": "コンゴ共和国の公用語はフランス語です。",
+      "prediction": "人口はおよそ6142180人です。",
+      "same_subject_matches": []
     },
     {
       "lang": "ja",
-      "category": "highest_point",
-      "q": "フランスで一番高い場所はどこですか？",
-      "reference": "フランスで一番高い場所はモンブランです。",
-      "prediction": "面積はおよそ8平方キロメートルです。"
-    },
-    {
-      "lang": "ja",
+      "fact_id": "population::france",
       "category": "population",
-      "q": "イスラエルの人口をご存知ですか？",
-      "reference": "イスラエルの人口はおよそ9840000人です。",
-      "prediction": "人口はおよそ9840000平方キロメートルです。"
+      "predicted_category": "population",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "フランスの人口をご存知ですか？",
+      "reference": "フランスの人口はおよそ68605616人です。",
+      "prediction": "人口はおよそ68605616人です。",
+      "same_subject_matches": [
+        "population"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "continent_of::sudan",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Which continent is Sudan in?",
+      "reference": "Sudan is in Africa.",
+      "prediction": "Sudan is in Africa.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
     },
     {
       "lang": "ja",
+      "fact_id": "highest_point::madagascar",
+      "category": "highest_point",
+      "predicted_category": "highest_point",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "マダガスカルで一番高い場所を教えてください。",
+      "reference": "マダガスカルで一番高い場所はマロモコトロ山です。",
+      "prediction": "一番高い場所はマロモコトロ山です。",
+      "same_subject_matches": [
+        "highest_point"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "currency::andorra",
+      "category": "currency",
+      "predicted_category": "currency",
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "アンドラの通貨を教えてください。",
+      "reference": "アンドラの通貨はユーロです。",
+      "prediction": "通貨はユーロです。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "continent_of::malawi",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Can you give the continent of Malawi?",
+      "reference": "Malawi is in Africa.",
+      "prediction": "Malawi is in Africa.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "element_number::nobelium",
+      "category": "element_number",
+      "predicted_category": "element_number",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "ノーベリウムの原子番号を答えてください。",
+      "reference": "ノーベリウムの原子番号は102です。",
+      "prediction": "102です。",
+      "same_subject_matches": [
+        "element_number"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "currency::ghana",
+      "category": "currency",
+      "predicted_category": "currency",
+      "error_cause": "unknown",
+      "subject_bound": true,
+      "q": "Can you give the currency of Ghana?",
+      "reference": "The currency of Ghana is Ghana cedi.",
+      "prediction": "Ghana is currency of Ghana, Dzani.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "continent_of::slovakia",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "スロバキアはどの大陸にありますか？",
+      "reference": "スロバキアはヨーロッパにあります。",
+      "prediction": "はヨーロッパにあります。",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "area::angola",
+      "category": "area",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "How many square kilometers is Angola?",
+      "reference": "The area of Angola is about 1246700 square kilometers.",
+      "prediction": "Angola is in Africa.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "continent_of::sint maarten",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "On which continent is Sint Maarten located?",
+      "reference": "Sint Maarten is in North America.",
+      "prediction": "Sint Maarten is in North America.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "highest_point::netherlands",
+      "category": "highest_point",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "I want to know the highest point of Netherlands.",
+      "reference": "The highest point of Netherlands is Mount Scenery.",
+      "prediction": "Netherlands is in Europe.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "area::kenya",
+      "category": "area",
+      "predicted_category": "area",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Tell me the area of Kenya.",
+      "reference": "The area of Kenya is about 581309 square kilometers.",
+      "prediction": "Kenya is about 581309 square kilometers.",
+      "same_subject_matches": [
+        "area"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "official_language::turkmenistan",
+      "category": "official_language",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Which language is official in Turkmenistan?",
+      "reference": "An official language of Turkmenistan is Turkmen.",
+      "prediction": "Turkmenistan is in Asia.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "capital::saudi arabia",
       "category": "capital",
-      "q": "東ティモールの首都を答えてください。",
-      "reference": "東ティモールの首都はディリです。",
-      "prediction": "人口はおよそ14878984人です。"
-    },
-    {
-      "lang": "ja",
-      "category": "element_symbol",
-      "q": "ユウロピウムの化学記号をご存知ですか？",
-      "reference": "ユウロピウムの化学記号はEuです。",
-      "prediction": "アオキシリウムの化学記号はUhoです。"
+      "predicted_category": "population",
+      "error_cause": "marker:population",
+      "subject_bound": false,
+      "q": "サウジアラビアの首都はどこですか？",
+      "reference": "サウジアラビアの首都はリヤドです。",
+      "prediction": "人口はおよそ33000000人です。",
+      "same_subject_matches": []
     },
     {
       "lang": "en",
-      "category": "element_symbol",
-      "q": "Can you give the chemical symbol of manganese?",
-      "reference": "The chemical symbol of manganese is Mn.",
-      "prediction": "10 Austria島化学記号は100です。"
-    },
-    {
-      "lang": "ja",
-      "category": "continent_of",
-      "q": "ブルンジがある大陸はどこですか？",
-      "reference": "ブルンジはアフリカにあります。",
-      "prediction": "オセアニアはアフリカにあります。"
+      "fact_id": "currency::uruguay",
+      "category": "currency",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "I want to know the currency of Uruguay.",
+      "reference": "The currency of Uruguay is Uruguayan peso.",
+      "prediction": "Uruguay is in South America.",
+      "same_subject_matches": []
     },
     {
       "lang": "en",
-      "category": "continent_of",
-      "q": "What continent is Kyrgyzstan in?",
-      "reference": "Kyrgyzstan is in Asia.",
-      "prediction": "Kyrgyzstan is in Asia."
+      "fact_id": "element_symbol::selenium",
+      "category": "element_symbol",
+      "predicted_category": "element_symbol",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Tell me the chemical symbol of selenium.",
+      "reference": "The chemical symbol of selenium is Se.",
+      "prediction": "selenium is Se.",
+      "same_subject_matches": [
+        "element_symbol"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "area::tuvalu",
+      "category": "area",
+      "predicted_category": "population",
+      "error_cause": "same_subject:population",
+      "subject_bound": true,
+      "q": "ツバルの面積はどれくらいですか？",
+      "reference": "ツバルの面積はおよそ25.1平方キロメートルです。",
+      "prediction": "人口はおよそ10643人です。",
+      "same_subject_matches": [
+        "population"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "capital::brazil",
+      "category": "capital",
+      "predicted_category": "population",
+      "error_cause": "same_subject:population",
+      "subject_bound": true,
+      "q": "ブラジルの首都について教えてください。",
+      "reference": "ブラジルの首都はブラジリアです。",
+      "prediction": "人口はおよそ213421037人です。",
+      "same_subject_matches": [
+        "population"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "element_number::nobelium",
+      "category": "element_number",
+      "predicted_category": null,
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "ノーベリウムは原子番号何番ですか？",
+      "reference": "ノーベリウムの原子番号は102です。",
+      "prediction": "Noです。",
+      "same_subject_matches": []
     }
   ]
 }

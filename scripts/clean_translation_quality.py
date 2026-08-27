@@ -13,16 +13,18 @@ Reads & rewrites in place:
   sft_data/dpo_enja/dpo_translation_enja.jsonl
 
 Usage:
-  python3 scripts/clean_translation_quality.py
+    python3 scripts/clean_translation_quality.py
+    python3 scripts/clean_translation_quality.py --sft sft_data/sft_translation_focused_v3_en_repair/train.jsonl
 """
 
+import argparse
 import json
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SFT = ROOT / "sft_data" / "sft_translation_focused" / "train.jsonl"
-DPO = ROOT / "sft_data" / "dpo_enja" / "dpo_translation_enja.jsonl"
+DEFAULT_SFT = ROOT / "sft_data" / "sft_translation_focused" / "train.jsonl"
+DEFAULT_DPO = ROOT / "sft_data" / "dpo_enja" / "dpo_translation_enja.jsonl"
 
 
 def has_ja(s):
@@ -132,7 +134,20 @@ def write(path, lines):
 
 
 def main():
-    for name, path, fn in [("SFT", SFT, clean_sft), ("DPO", DPO, clean_dpo)]:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sft", default=str(DEFAULT_SFT),
+                    help="SFT translation jsonl path to clean in place")
+    ap.add_argument("--dpo", default=str(DEFAULT_DPO),
+                    help="DPO translation jsonl path to clean in place")
+    args = ap.parse_args()
+
+    targets = [
+        ("SFT", Path(args.sft).expanduser(), clean_sft),
+        ("DPO", Path(args.dpo).expanduser(), clean_dpo),
+    ]
+    for name, path, fn in targets:
+        if not path.is_absolute():
+            path = ROOT / path
         if not path.exists():
             print(f"[{name}] skip (not found): {path}")
             continue

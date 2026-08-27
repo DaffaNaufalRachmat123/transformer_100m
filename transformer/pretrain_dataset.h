@@ -47,10 +47,24 @@ inline Language lang_from_dirname(const std::string& name) {
     return Language::Unknown;
 }
 
-// Per-phase language sampling weights (EN+JA bilingual)
-// Single-phase mode: weights are flat — EN slightly higher for data volume.
-inline float lang_sample_weight(Language l, int phase = 0) {
+// Per-phase language sampling weights.
+// Two supported corpora layouts:
+//   - Bilingual (EN+JA, no indonesian/ dir): EN 0.55 / JA 0.45 (original).
+//   - Trilingual (indonesian/ dir present):   EN 0.30 / JA 0.25 / ID 0.45.
+//     ID-heavy for the language-acquisition continuation phase; renormalize
+//     back toward EN/JA once ID competence is reached.
+// The caller passes whether Indonesian data exists so the same binary can
+// serve both corpus layouts without recompiling.
+inline float lang_sample_weight(Language l, int phase = 0, bool has_indonesian = false) {
     (void)phase;  // single-phase, no curriculum
+    if (has_indonesian) {
+        switch (l) {
+            case Language::English:    return 0.30f;
+            case Language::Japanese:   return 0.25f;
+            case Language::Indonesian: return 0.45f;
+            default:                   return 0.00f;
+        }
+    }
     switch (l) {
         case Language::English:    return 0.55f;
         case Language::Japanese:   return 0.45f;

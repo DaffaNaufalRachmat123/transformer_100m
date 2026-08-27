@@ -749,14 +749,56 @@ int main(int argc, char** argv) {
 
     // Load tokenizer
     BPEEncoder tok;
-    if (!g_bpe_path.empty()) tok.load(g_bpe_path);
-    else tok.load_vocab(g_vocab_dir);
+    try {
+        if (!g_bpe_path.empty()) {
+            if (tok.load(g_bpe_path)) {
+                fprintf(stderr, "[TOK] Loaded BPE binary: %s\n", g_bpe_path.c_str());
+            } else if (!g_vocab_dir.empty()) {
+                fprintf(stderr,
+                        "[TOK] Failed to load BPE binary: %s; falling back to vocab dir: %s\n",
+                        g_bpe_path.c_str(), g_vocab_dir.c_str());
+                tok.load_vocab(g_vocab_dir);
+            } else {
+                fprintf(stderr, "[ERR] Failed to load BPE binary: %s\n", g_bpe_path.c_str());
+                return 1;
+            }
+        } else if (!g_vocab_dir.empty()) {
+            tok.load_vocab(g_vocab_dir);
+            fprintf(stderr, "[TOK] Loaded vocab dir: %s\n", g_vocab_dir.c_str());
+        } else {
+            fprintf(stderr, "[ERR] No tokenizer source provided. Pass --bpe or --vocab_dir.\n");
+            return 1;
+        }
+    } catch (const std::exception& e) {
+        fprintf(stderr, "[ERR] Tokenizer load failed: %s\n", e.what());
+        return 1;
+    }
+    if (tok.vocab_size() == 0) {
+        fprintf(stderr, "[ERR] Tokenizer loaded zero tokens.\n");
+        return 1;
+    }
+    printf("[TOK] Loaded: vocab_size=%zu\n", tok.vocab_size());
+
     TOK_BOS = tok.bos_id(); TOK_EOS = tok.eos_id(); TOK_PAD = tok.pad_id();
     if (TOK_PAD < 0) TOK_PAD = TOK_BOS;
     TOK_SYSTEM = (int)tok.special_id(SpecialTokens::SYSTEM);
     TOK_USER = (int)tok.special_id(SpecialTokens::USER);
     TOK_ASSISTANT = (int)tok.special_id(SpecialTokens::ASSISTANT);
     TOK_END = (int)tok.special_id(SpecialTokens::END);
+    auto bad_tok = [](int tok_id) { return tok_id < 0 || tok_id >= MODEL_VOCAB; };
+    if (bad_tok(TOK_BOS) || bad_tok(TOK_EOS) || bad_tok(TOK_PAD) ||
+        bad_tok(TOK_SYSTEM) || bad_tok(TOK_USER) ||
+        bad_tok(TOK_ASSISTANT) || bad_tok(TOK_END)) {
+        fprintf(stderr,
+                "[ERR] Tokenizer special IDs invalid: bos=%d eos=%d pad=%d system=%d user=%d assistant=%d end=%d\n",
+                TOK_BOS, TOK_EOS, TOK_PAD, TOK_SYSTEM, TOK_USER, TOK_ASSISTANT, TOK_END);
+        fprintf(stderr,
+                "[ERR] Ensure the runtime can load the matching bpe_v6.bin or vocab_6 files before Stage %d.\n",
+                g_stage);
+        return 1;
+    }
+    printf("[TOK] Special ids: bos=%d eos=%d pad=%d system=%d user=%d assistant=%d end=%d\n",
+           TOK_BOS, TOK_EOS, TOK_PAD, TOK_SYSTEM, TOK_USER, TOK_ASSISTANT, TOK_END);
 
     // Load base model + master/optimizer
     auto params = load_model(g_base_model);
@@ -774,23 +816,42 @@ int main(int argc, char** argv) {
     // NOTE: This is a temporary workaround until pretraining is re-run with
     // chat data mixed in via data/corpus_final/mixed/.
     {
-        auto copy_embed_row = [&](int dst_id, int src_id) {
+        auto copy_embed_row = [&](int dst_id, int src_id, const char* dst_name, const char* src_name) {
+            if (bad_tok(dst_id) || bad_tok(src_id)) {
+                fprintf(stderr,
+                        "[ERR] Cannot initialize %s from %s: dst=%d src=%d\n",
+                        dst_name, src_name, dst_id, src_id);
+                return false;
+            }
             size_t row_bytes = (size_t)D_MODEL * sizeof(__half);
-            cudaMemcpy((__half*)params[0].data + (size_t)dst_id * D_MODEL,
-                       (const __half*)params[0].data + (size_t)src_id * D_MODEL,
-                       row_bytes, cudaMemcpyDeviceToDevice);
+            cudaError_t err = cudaMemcpy((__half*)params[0].data + (size_t)dst_id * D_MODEL,
+                                         (const __half*)params[0].data + (size_t)src_id * D_MODEL,
+                                         row_bytes, cudaMemcpyDeviceToDevice);
+            if (err != cudaSuccess) {
+                fprintf(stderr, "[ERR] Failed to copy %s embedding from %s: %s\n",
+                        dst_name, src_name, cudaGetErrorString(err));
+                return false;
+            }
             size_t f32_row_bytes = (size_t)D_MODEL * sizeof(float);
-            cudaMemcpy((float*)master_params[0].data + (size_t)dst_id * D_MODEL,
-                       (const float*)master_params[0].data + (size_t)src_id * D_MODEL,
-                       f32_row_bytes, cudaMemcpyDeviceToDevice);
+            err = cudaMemcpy((float*)master_params[0].data + (size_t)dst_id * D_MODEL,
+                             (const float*)master_params[0].data + (size_t)src_id * D_MODEL,
+                             f32_row_bytes, cudaMemcpyDeviceToDevice);
+            if (err != cudaSuccess) {
+                fprintf(stderr, "[ERR] Failed to copy master %s embedding from %s: %s\n",
+                        dst_name, src_name, cudaGetErrorString(err));
+                return false;
+            }
+            return true;
         };
-        copy_embed_row(TOK_SYSTEM,    TOK_BOS);
-        copy_embed_row(TOK_USER,      TOK_BOS);
-        copy_embed_row(TOK_ASSISTANT, TOK_BOS);
-        copy_embed_row(TOK_PAD,       TOK_EOS);
-        printf("[INIT] Copied BOS(0) embedding → SYSTEM(%d) USER(%d) ASSISTANT(%d)\n",
-               TOK_SYSTEM, TOK_USER, TOK_ASSISTANT);
-        printf("[INIT] Copied EOS(4) embedding → PAD(%d)\n", TOK_PAD);
+        if (!copy_embed_row(TOK_SYSTEM, TOK_BOS, "SYSTEM", "BOS") ||
+            !copy_embed_row(TOK_USER, TOK_BOS, "USER", "BOS") ||
+            !copy_embed_row(TOK_ASSISTANT, TOK_BOS, "ASSISTANT", "BOS") ||
+            !copy_embed_row(TOK_PAD, TOK_EOS, "PAD", "EOS")) {
+            return 1;
+        }
+         printf("[INIT] Copied BOS(%d) embedding → SYSTEM(%d) USER(%d) ASSISTANT(%d)\n",
+             TOK_BOS, TOK_SYSTEM, TOK_USER, TOK_ASSISTANT);
+         printf("[INIT] Copied EOS(%d) embedding → PAD(%d)\n", TOK_EOS, TOK_PAD);
     }
 
     // RoPE tables

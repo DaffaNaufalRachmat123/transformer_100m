@@ -1,5 +1,5 @@
 capital	Bulgaria	ブルガリア	Sofia	ソフィア
-capital	Naoero	ナウル	Yaren District	ヤレン地区
+capital	Nauru	ナウル	Yaren District	ヤレン地区
 capital	Spain	スペイン王国	Madrid	マドリード
 capital	Bosnia and Herzegovina	ボスニア・ヘルツェゴビナ	Sarajevo	サラエヴォ
 capital	Romania	ルーマニア	Bucharest	ブカレスト
@@ -240,7 +240,7 @@ currency	United Kingdom	イギリス	pound sterling	スターリング・ポン�
 currency	Brazil	ブラジル	Brazilian real	レアル
 currency	Mexico	メキシコ	peso	メキシコ・ペソ
 currency	Azerbaijan	アゼルバイジャン	Azerbaijani manat	アゼルバイジャン・マナト
-currency	Naoero	ナウル	Australian dollar	オーストラリア・ドル
+currency	Nauru	ナウル	Australian dollar	オーストラリア・ドル
 currency	Algeria	アルジェリア	Algerian dinar	アルジェリア・ディナール
 currency	Barbados	バルバドス	Barbadian dollar	バルバドス・ドル
 currency	Samoa	サモア	Samoan tālā	タラ
@@ -284,7 +284,6 @@ currency	Australia	オーストラリア	Australian dollar	オーストラリア
 currency	Tonga	トンガ	Tongan paʻanga	パアンガ
 currency	Argentina	アルゼンチン	Argentine convertible peso	アルゼンチン・ペソ
 currency	Kenya	ケニア	Kenyan shilling	ケニア・シリング
-currency	France	フランス	CFP Franc	CFPフラン
 currency	Indonesia	インドネシア	rupiah	ルピア
 currency	South Africa	南アフリカ共和国	rand	ランド
 currency	Russia	ロシア	Russian ruble	ロシア・ルーブル
@@ -640,7 +639,7 @@ official_language	India	インド	English	英語
 official_language	South Africa	南アフリカ共和国	South African Sign Language	南アフリカ手話
 official_language	Peru	ペルー	Aymara	アイマラ語
 official_language	Papua New Guinea	パプアニューギニア	Tok Pisin	トク・ピシン
-official_language	Naoero	ナウル	English	英語
+official_language	Nauru	ナウル	English	英語
 official_language	North Korea	朝鮮民主主義人民共和国	Korean	朝鮮語
 official_language	Armenia	アルメニア	Armenian	アルメニア語
 official_language	Ecuador	エクアドル	Spanish	スペイン語
@@ -675,7 +674,7 @@ official_language	Vanuatu	バヌアツ	Bislama	ビスラマ語
 official_language	Cambodia	カンボジア	Khmer	クメール語
 official_language	Chad	チャド	Arabic	アラビア語
 official_language	Chad	チャド	French	フランス語
-official_language	Naoero	ナウル	Nauruan	ナウル語
+official_language	Nauru	ナウル	Nauruan	ナウル語
 official_language	Denmark	デンマーク	Danish	デンマーク語
 official_language	Mexico	メキシコ	Spanish	スペイン語
 official_language	Andorra	アンドラ	Catalan	カタルーニャ語
@@ -925,7 +924,7 @@ population	Papua New Guinea	パプアニューギニア	8935000	8935000
 population	Indonesia	インドネシア	275439000	275439000
 population	India	インド	1326093247	1326093247
 population	Liechtenstein	リヒテンシュタイン	37922	37922
-population	Naoero	ナウル	13650	13650
+population	Nauru	ナウル	13650	13650
 population	Algeria	アルジェリア	46164219	46164219
 population	Malta	マルタ	405308	405308
 population	Malta	マルタ	406724	406724
@@ -1017,7 +1016,7 @@ highest_point	Chad	チャド	Emi Koussi	エミクーシ山
 highest_point	Cambodia	カンボジア	Phnom Aural	アオラル山
 highest_point	United Kingdom	イギリス	Ben Nevis	ベン・ネヴィス山
 highest_point	South Africa	南アフリカ共和国	Mafadi	マファディ山
-highest_point	Naoero	ナウル	Command Ridge	コマンド・リッジ
+highest_point	Nauru	ナウル	Command Ridge	コマンド・リッジ
 highest_point	Germany	ドイツ	Zugspitze	ツークシュピッツェ
 highest_point	Luxembourg	ルクセンブルク	Kneiff	クナイフ
 highest_point	Greenland	グリーンランド	Gunnbjørn Fjeld	ギュンビョルン山
@@ -1259,7 +1258,7 @@ continent_of	Papua New Guinea	パプアニューギニア	Oceania	オセアニ�
 continent_of	Cambodia	カンボジア	Asia	アジア
 continent_of	Romania	ルーマニア	Europe	ヨーロッパ
 continent_of	Chad	チャド	Africa	アフリカ
-continent_of	Naoero	ナウル	Oceania	オセアニア
+continent_of	Nauru	ナウル	Oceania	オセアニア
 continent_of	Belgium	ベルギー	Europe	ヨーロッパ
 continent_of	Ukraine	ウクライナ	Europe	ヨーロッパ
 continent_of	Germany	ドイツ	Europe	ヨーロッパ
@@ -1412,7 +1411,7 @@ head_of_state	Switzerland	スイス	Swiss Federal Council	連邦参事会
 head_of_state	India	インド	Narendra Modi	ナレンドラ・モディ
 head_of_state	Finland	フィンランド	Petteri Orpo	ペッテリ・オルポ
 head_of_state	Czech Republic	チェコ共和国	Andrej Babiš	アンドレイ・バビシュ
-head_of_state	Naoero	ナウル	David Adeang	デビッド・アデアン
+head_of_state	Nauru	ナウル	David Adeang	デビッド・アデアン
 head_of_state	North Macedonia	北マケドニア	Hristijan Mickoski	フリスティヤン・ミツコスキ
 head_of_state	Solomon Islands	ソロモン諸島	Jeremiah Manele	ジャーマイア・マネレ
 head_of_state	Sweden	スウェーデン	Ulf Kristersson	ウルフ・クリステルソン
@@ -1663,7 +1662,7 @@ area	Italy	イタリア	302068	302068
 area	Indonesia	インドネシア	1904570	1904570
 area	India	インド	3287263	3287263
 area	Liechtenstein	リヒテンシュタイン	160	160
-area	Naoero	ナウル	21	21
+area	Nauru	ナウル	21	21
 area	Ghana	ガーナ	238535	238535
 area	Algeria	アルジェリア	2381741	2381741
 area	Malta	マルタ	316	316
@@ -2094,46 +2093,44 @@ element_number	unquadennium	ウンクアドエンニウム	149	149
 element_number	unpentquadium	ウンペントクアジウム	154	154
 element_number	berkelium	バークリウム	97	97
 element_number	lawrencium	ローレンシウム	103	103
-capital	Antigua and Barbuda	アンティグア・バーブーダ	Q36262	セイント・ジョンズ
-capital	Grenada	グレナダ	St	セントジョージズ
-capital	United States	アメリカ合衆国	Washington, D	ワシントンD.C.
+capital	Antigua and Barbuda	アンティグア・バーブーダ	Saint John's	セイント・ジョンズ
 capital	Kashmir Sultanate	カシュミール・スルターン朝	Nowhatta	Q7066653
 capital	Kashmir Sultanate	カシュミール・スルターン朝	Nowshera	Q2454236
 capital	Silla in the Later Three Kingdoms period	Q19724467	Gyeongju	慶州市
 capital	Kashmir Sultanate	カシュミール・スルターン朝	Sopore	Q2321929
 capital	Kashmir Sultanate	カシュミール・スルターン朝	Chanderkot	Q110800198
-currency	Andorra	アンドラ	Q4916	ユーロ
-currency	Austria	オーストリア	Q4916	ユーロ
-currency	Belgium	ベルギー	Q4916	ユーロ
-currency	Bulgaria	ブルガリア	Q4916	ユーロ
-currency	Croatia	クロアチア	Q4916	ユーロ
-currency	Cyprus	キプロス	Q4916	ユーロ
-currency	Estonia	エストニア	Q4916	ユーロ
-currency	Finland	フィンランド	Q4916	ユーロ
-currency	France	フランス	Q4916	ユーロ
-currency	Germany	ドイツ	Q4916	ユーロ
-currency	Greece	ギリシャ	Q4916	ユーロ
-currency	Ireland	アイルランド	Q4916	ユーロ
-currency	Italy	イタリア	Q4916	ユーロ
-currency	Kingdom of the Netherlands	オランダ王国	Q4916	ユーロ
-currency	Kosovo	コソボ共和国	Q4916	ユーロ
-currency	Latvia	ラトビア	Q4916	ユーロ
-currency	Lithuania	リトアニア	Q4916	ユーロ
-currency	Luxembourg	ルクセンブルク	Q4916	ユーロ
-currency	Malta	マルタ	Q4916	ユーロ
+currency	Andorra	アンドラ	euro	ユーロ
+currency	Austria	オーストリア	euro	ユーロ
+currency	Belgium	ベルギー	euro	ユーロ
+currency	Bulgaria	ブルガリア	euro	ユーロ
+currency	Croatia	クロアチア	euro	ユーロ
+currency	Cyprus	キプロス	euro	ユーロ
+currency	Estonia	エストニア	euro	ユーロ
+currency	Finland	フィンランド	euro	ユーロ
+currency	France	フランス	euro	ユーロ
+currency	Germany	ドイツ	euro	ユーロ
+currency	Greece	ギリシャ	euro	ユーロ
+currency	Ireland	アイルランド	euro	ユーロ
+currency	Italy	イタリア	euro	ユーロ
+currency	Kingdom of the Netherlands	オランダ王国	euro	ユーロ
+currency	Kosovo	コソボ共和国	euro	ユーロ
+currency	Latvia	ラトビア	euro	ユーロ
+currency	Lithuania	リトアニア	euro	ユーロ
+currency	Luxembourg	ルクセンブルク	euro	ユーロ
+currency	Malta	マルタ	euro	ユーロ
 currency	Marshall Islands	マーシャル諸島	SOV	Q96051466
-currency	Monaco	モナコ	Q4916	ユーロ
-currency	Montenegro	モンテネグロ	Q4916	ユーロ
+currency	Monaco	モナコ	euro	ユーロ
+currency	Montenegro	モンテネグロ	euro	ユーロ
 currency	Muscat and Oman	マスカット・オマーン	Said rial	Q4405126
-currency	Netherlands	オランダ	Q4916	ユーロ
+currency	Netherlands	オランダ	euro	ユーロ
 currency	Niue	ニウエ	Niue dollar	Q4165057
-currency	Portugal	ポルトガル	Q4916	ユーロ
-currency	San Marino	サンマリノ	Q4916	ユーロ
-currency	Slovakia	スロバキア	Q4916	ユーロ
-currency	Slovenia	スロベニア	Q4916	ユーロ
-currency	Spain	スペイン王国	Q4916	ユーロ
-currency	Vatican City	バチカン	Q4916	ユーロ
-currency	Zimbabwe	ジンバブエ	Q4916	ユーロ
+currency	Portugal	ポルトガル	euro	ユーロ
+currency	San Marino	サンマリノ	euro	ユーロ
+currency	Slovakia	スロバキア	euro	ユーロ
+currency	Slovenia	スロベニア	euro	ユーロ
+currency	Spain	スペイン王国	euro	ユーロ
+currency	Vatican City	バチカン	euro	ユーロ
+currency	Zimbabwe	ジンバブエ	euro	ユーロ
 head_of_state	Afghanistan	アフガニスタン	Mohammad Hasan Akhund	モハマド・ハサン・アクンド
 head_of_state	Angola	アンゴラ	João Lourenço	ジョアン・ロウレンソ
 head_of_state	Antigua and Barbuda	アンティグア・バーブーダ	Gaston Browne	ガストン・ブラウン
@@ -2171,7 +2168,7 @@ head_of_state	Laos	ラオス	Sonexay Siphandone	ソーンサイ・シーパン�
 head_of_state	Libya	リビア	Abd al-Hamid Dbeibeh	アブドゥルハミード・ドベイバ
 head_of_state	Lithuania	リトアニア	Mindaugas Sinkevičius	Q1936326
 head_of_state	Madagascar	マダガスカル	Ruphin Zafisambo	Q136448305
-head_of_state	Mexico	メキシコ	Q5771800	クラウディア・シェインバウム
+head_of_state	Mexico	メキシコ	Claudia Sheinbaum	クラウディア・シェインバウム
 head_of_state	Moldova	モルドバ	Vasile Tofan	Q140480413
 head_of_state	Monaco	モナコ	Christophe Mirmand	Q29934395
 head_of_state	Mongolia	モンゴル国	Uchral Nyam-Osor	Q110962738
@@ -2193,7 +2190,7 @@ head_of_state	Saint Lucia	セントルシア	Philip J	フィリップ・ピエ�
 head_of_state	Saint Vincent and the Grenadines	セントビンセント・グレナディーン	Godwin Friday	ゴドウィン・フライデー
 head_of_state	São Tomé and Príncipe	サントメ・プリンシペ	Américo Ramos	Q131749390
 head_of_state	Senegal	セネガル	Bassirou Diomaye Faye	バシル・ジョマイ・ファイ
-head_of_state	Serbia	セルビア	Q42478807	ジュロ・マクト
+head_of_state	Serbia	セルビア	Đurica Macut	ジュロ・マクト
 head_of_state	South Korea	大韓民国	Lee Jae Myung	李在明
 head_of_state	South Sudan	南スーダン	Salva Kiir Mayardit	サルバ・キール・マヤルディ
 head_of_state	Tajikistan	タジキスタン	Kokhir Rasulzoda	コヒル・ラスルゾダ
@@ -2225,7 +2222,7 @@ highest_point	Niue	ニウエ	Niue Highest Point	Q28745318
 highest_point	Palestine	パレスチナ国	Mount Nabi Yunis	Q6922335
 highest_point	Senegal	セネガル	Népin Cliff	Q98596662
 highest_point	Serbia	セルビア	Velika Rudoka	Q20568528
-highest_point	United States	アメリカ合衆国	Q130018	デナリ
+highest_point	United States	アメリカ合衆国	Denali	デナリ
 highest_point	Zambia	ザンビア	Mafinga Central	Q18351462
 official_language	Albania	アルバニア	Albanian	アルバニア語
 official_language	Algeria	アルジェリア	Standard Algerian Berber	Q61053330

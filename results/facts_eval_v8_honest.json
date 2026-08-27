@@ -1,0 +1,440 @@
+{
+  "model": "translation_resources/facts/ckpt_sft_final (8).safetensors",
+  "num": 20,
+  "sample_unit": "row",
+  "lang_ok_pct": {
+    "en": 100.0,
+    "ja": 100.0
+  },
+  "attr_ok_pct": {
+    "en": 20.0,
+    "ja": 60.0
+  },
+  "value_hit_pct": {
+    "en": 20.0,
+    "ja": 40.0
+  },
+  "content_hit": {
+    "en": 35.9,
+    "ja": 55.1
+  },
+  "leakage": {
+    "en_ja_script": 0,
+    "ja_latin_only": 0
+  },
+  "fact_level": {
+    "en": {
+      "fact_ids": 10,
+      "any_hit_pct": 20.0,
+      "all_hit_pct": 20.0
+    },
+    "ja": {
+      "fact_ids": 10,
+      "any_hit_pct": 40.0,
+      "all_hit_pct": 40.0
+    }
+  },
+  "per_category": {
+    "en": {
+      "continent_of": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 100.0,
+        "value_hit_pct": 100.0,
+        "content_hit_pct": 100.0
+      },
+      "official_language": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 28.6
+      },
+      "area": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 16.7
+      },
+      "capital": {
+        "n": 2,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 22.6
+      },
+      "highest_point": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 0.0
+      },
+      "element_symbol": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 14.3
+      },
+      "population": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 0.0,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 37.5
+      }
+    },
+    "ja": {
+      "continent_of": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 100.0,
+        "value_hit_pct": 100.0,
+        "content_hit_pct": 75.0
+      },
+      "area": {
+        "n": 4,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 50.0,
+        "value_hit_pct": 25.0,
+        "content_hit_pct": 52.2
+      },
+      "population": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 100.0,
+        "value_hit_pct": 100.0,
+        "content_hit_pct": 100.0
+      },
+      "element_symbol": {
+        "n": 1,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 100.0,
+        "value_hit_pct": 100.0,
+        "content_hit_pct": 75.0
+      },
+      "highest_point": {
+        "n": 3,
+        "lang_ok_pct": 100.0,
+        "attr_ok_pct": 33.3,
+        "value_hit_pct": 0.0,
+        "content_hit_pct": 30.9
+      }
+    }
+  },
+  "confusion": {
+    "en": {
+      "continent_of": {
+        "continent_of": 2
+      },
+      "official_language": {
+        "continent_of": 1
+      },
+      "area": {
+        "continent_of": 2
+      },
+      "capital": {
+        "continent_of": 2
+      },
+      "highest_point": {
+        "unknown": 1
+      },
+      "element_symbol": {
+        "continent_of": 1
+      },
+      "population": {
+        "continent_of": 1
+      }
+    },
+    "ja": {
+      "continent_of": {
+        "continent_of": 1
+      },
+      "area": {
+        "population": 2,
+        "area": 2
+      },
+      "population": {
+        "population": 1
+      },
+      "element_symbol": {
+        "element_symbol": 1
+      },
+      "highest_point": {
+        "highest_point": 1,
+        "unknown": 2
+      }
+    }
+  },
+  "error_causes": {
+    "en": {
+      "other_fact:continent_of": 5,
+      "same_subject:continent_of": 1,
+      "unknown": 1,
+      "other_subject_same_category": 1
+    },
+    "ja": {
+      "subject_missing": 3,
+      "marker:population": 2,
+      "unknown": 4
+    }
+  },
+  "samples": [
+    {
+      "lang": "en",
+      "fact_id": "continent_of::pakistan",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Do you know which continent Pakistan is in?",
+      "reference": "Pakistan is in Asia.",
+      "prediction": "Pakistan is in Asia.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "continent_of::poland",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "ポーランドの大陸を教えてください。",
+      "reference": "ポーランドはヨーロッパにあります。",
+      "prediction": "アフリカはヨーロッパにあります。",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "area::jamaica",
+      "category": "area",
+      "predicted_category": "population",
+      "error_cause": "marker:population",
+      "subject_bound": false,
+      "q": "ジャマイカの面積を答えてください。",
+      "reference": "ジャマイカの面積はおよそ10991.9平方キロメートルです。",
+      "prediction": "人口はおよそ2697983人です。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "area::guinea-bissau",
+      "category": "area",
+      "predicted_category": "area",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "ギニアビサウ共和国の面積を知りたいです。",
+      "reference": "ギニアビサウ共和国の面積はおよそ36125平方キロメートルです。",
+      "prediction": "ビサウ共和国の面積はおよそ36125平方キロメートルです。",
+      "same_subject_matches": [
+        "area"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "official_language::kyrgyzstan",
+      "category": "official_language",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Do you know an official language of Kyrgyzstan?",
+      "reference": "An official language of Kyrgyzstan is Kyrgyz.",
+      "prediction": "Kyrgyzstan is in Asia.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "area::honduras",
+      "category": "area",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Do you know the area of Honduras?",
+      "reference": "The area of Honduras is about 112492 square kilometers.",
+      "prediction": "Honduras is in North America.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "capital::argentina",
+      "category": "capital",
+      "predicted_category": "continent_of",
+      "error_cause": "same_subject:continent_of",
+      "subject_bound": true,
+      "q": "What is the capital of Argentina?",
+      "reference": "The capital of Argentina is Buenos Aires.",
+      "prediction": "Argentina is in South America.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "area::ecuador",
+      "category": "area",
+      "predicted_category": "area",
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "エクアドルの面積は何平方キロメートルですか？",
+      "reference": "エクアドルの面積はおよそ257204.3平方キロメートルです。",
+      "prediction": "面積はおよそ257208平方キロメートルです。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "continent_of::sint maarten",
+      "category": "continent_of",
+      "predicted_category": "continent_of",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "Which continent is Sint Maarten in?",
+      "reference": "Sint Maarten is in North America.",
+      "prediction": "Sint Maarten is in North America.",
+      "same_subject_matches": [
+        "continent_of"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "highest_point::tuvalu",
+      "category": "highest_point",
+      "predicted_category": null,
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "Tell me the highest point of Tuvalu.",
+      "reference": "The highest point of Tuvalu is Niulakita.",
+      "prediction": "Tŭhska.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "element_symbol::unpenttrium",
+      "category": "element_symbol",
+      "predicted_category": "continent_of",
+      "error_cause": "other_subject_same_category",
+      "subject_bound": false,
+      "q": "I want to know the chemical symbol of unpenttrium.",
+      "reference": "The chemical symbol of unpenttrium is Upt.",
+      "prediction": "Uqt is in Europe.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "population::kosovo",
+      "category": "population",
+      "predicted_category": "population",
+      "error_cause": "correct",
+      "subject_bound": true,
+      "q": "コソボ共和国の人口を知りたいです。",
+      "reference": "コソボ共和国の人口はおよそ1586659人です。",
+      "prediction": "コソボ共和国の人口はおよそ1586659人です。",
+      "same_subject_matches": [
+        "population"
+      ]
+    },
+    {
+      "lang": "ja",
+      "fact_id": "element_symbol::meitnerium",
+      "category": "element_symbol",
+      "predicted_category": "element_symbol",
+      "error_cause": "subject_missing",
+      "subject_bound": false,
+      "q": "マイトネリウムの化学記号を知りたいです。",
+      "reference": "マイトネリウムの化学記号はMtです。",
+      "prediction": "ディリウムの化学記号はMtです。",
+      "same_subject_matches": [
+        "element_symbol"
+      ]
+    },
+    {
+      "lang": "en",
+      "fact_id": "population::cape verde",
+      "category": "population",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": true,
+      "q": "Tell me the population of Cape Verde.",
+      "reference": "The population of Cape Verde is about 555988.",
+      "prediction": "Cape Verde is in Africa.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "highest_point::albania",
+      "category": "highest_point",
+      "predicted_category": "highest_point",
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "アルバニアの最高地点を知りたいです。",
+      "reference": "アルバニアで一番高い場所はコラプ山です。",
+      "prediction": "イェレヴァンで一番高い場所はジェラヴィツァです。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "area::greenland",
+      "category": "area",
+      "predicted_category": "population",
+      "error_cause": "marker:population",
+      "subject_bound": false,
+      "q": "グリーンランドの面積は何平方キロメートルですか？",
+      "reference": "グリーンランドの面積はおよそ2166086平方キロメートルです。",
+      "prediction": "人口はおよそ56609人です。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "capital::nigeria",
+      "category": "capital",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": false,
+      "q": "Please tell me the capital city of Nigeria.",
+      "reference": "The capital of Nigeria is Abuja.",
+      "prediction": "Uganda is in Africa.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "highest_point::italy",
+      "category": "highest_point",
+      "predicted_category": null,
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "イタリアの最高地点を知りたいです。",
+      "reference": "イタリアで一番高い場所はモンブランです。",
+      "prediction": "山です。",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "en",
+      "fact_id": "area::spain",
+      "category": "area",
+      "predicted_category": "continent_of",
+      "error_cause": "other_fact:continent_of",
+      "subject_bound": false,
+      "q": "I want to know the area of Spain.",
+      "reference": "The area of Spain is about 505990 square kilometers.",
+      "prediction": "Tórdoba is in Europe.",
+      "same_subject_matches": []
+    },
+    {
+      "lang": "ja",
+      "fact_id": "highest_point::south sudan",
+      "category": "highest_point",
+      "predicted_category": null,
+      "error_cause": "unknown",
+      "subject_bound": false,
+      "q": "南スーダンの最高地点をご存知ですか？",
+      "reference": "南スーダンで一番高い場所はキヌエティ山です。",
+      "prediction": "山です。",
+      "same_subject_matches": []
+    }
+  ]
+}

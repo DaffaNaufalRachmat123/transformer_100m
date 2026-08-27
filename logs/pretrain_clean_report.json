@@ -1,0 +1,71 @@
+{
+  "input": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_mobile_claude/data/corpus_final/english",
+  "output": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_pretrain_2_5b/english",
+  "dry_run": false,
+  "files": [
+    {
+      "file": "fineweb.txt",
+      "bucket": "text",
+      "total": 5273067,
+      "kept": 5263550,
+      "dropped": 9517,
+      "drop_rate": 0.001805,
+      "reasons": {
+        "spam_keyword": 9465,
+        "replacement_chars": 38,
+        "js_leak": 14
+      }
+    },
+    {
+      "file": "fineweb_edu.txt",
+      "bucket": "text",
+      "total": 6711072,
+      "kept": 6708175,
+      "dropped": 2897,
+      "drop_rate": 0.000432,
+      "reasons": {
+        "spam_keyword": 2723,
+        "replacement_chars": 134,
+        "js_leak": 40
+      }
+    },
+    {
+      "file": "fineweb_edu_epoch2.txt",
+      "bucket": "text",
+      "total": 6711072,
+      "kept": 6708175,
+      "dropped": 2897,
+      "drop_rate": 0.000432,
+      "reasons": {
+        "spam_keyword": 2723,
+        "replacement_chars": 134,
+        "js_leak": 40
+      }
+    },
+    {
+      "file": "fineweb_edu_epoch3.txt",
+      "bucket": "text",
+      "total": 6711072,
+      "kept": 6708175,
+      "dropped": 2897,
+      "drop_rate": 0.000432,
+      "reasons": {
+        "spam_keyword": 2723,
+        "replacement_chars": 134,
+        "js_leak": 40
+      }
+    }
+  ],
+  "totals": {
+    "files": 4,
+    "lines_total": 25406283,
+    "lines_kept": 25388075,
+    "lines_dropped": 18208,
+    "drop_rate": 0.000717
+  },
+  "drop_reasons": {
+    "spam_keyword": 17634,
+    "replacement_chars": 440,
+    "js_leak": 134
+  }
+}
