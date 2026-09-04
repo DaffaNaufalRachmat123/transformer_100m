@@ -1,0 +1,261 @@
+{
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/code/starcoder_clean.txt": {
+    "lang": "code",
+    "bytes": 3197818326,
+    "est_tokens": 841531138,
+    "sampled": 1500,
+    "avg_doc_chars": 32.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.7533,
+    "verdict": "WARN",
+    "reasons": [
+      "short=75.3%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/english/fineweb.txt": {
+    "lang": "en",
+    "bytes": 1031705432,
+    "est_tokens": 245644150,
+    "sampled": 1500,
+    "avg_doc_chars": 191.0,
+    "lid_purity": 0.998,
+    "spam_rate": 0.0,
+    "short_share": 0.278,
+    "verdict": "WARN",
+    "reasons": [
+      "short=27.8%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/english/fineweb_edu.txt": {
+    "lang": "en",
+    "bytes": 1553121762,
+    "est_tokens": 369790895,
+    "sampled": 1500,
+    "avg_doc_chars": 247.0,
+    "lid_purity": 0.995,
+    "spam_rate": 0.0,
+    "short_share": 0.1587,
+    "verdict": "WARN",
+    "reasons": [
+      "short=15.9%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/english/fineweb_edu_extra.txt": {
+    "lang": "en",
+    "bytes": 3286328660,
+    "est_tokens": 782459204,
+    "sampled": 1500,
+    "avg_doc_chars": 3609.0,
+    "lid_purity": 1.0,
+    "spam_rate": 0.0,
+    "short_share": 0.0,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/english/openwebtext.txt": {
+    "lang": "en",
+    "bytes": 1025771126,
+    "est_tokens": 244231220,
+    "sampled": 1500,
+    "avg_doc_chars": 288.0,
+    "lid_purity": 1.0,
+    "spam_rate": 0.0013,
+    "short_share": 0.148,
+    "verdict": "WARN",
+    "reasons": [
+      "short=14.8%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/english/wiki_en.txt": {
+    "lang": "en",
+    "bytes": 1942093292,
+    "est_tokens": 462403164,
+    "sampled": 1500,
+    "avg_doc_chars": 201.0,
+    "lid_purity": 0.976,
+    "spam_rate": 0.0,
+    "short_share": 0.3853,
+    "verdict": "WARN",
+    "reasons": [
+      "short=38.5%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/indonesian/culturax_id.txt": {
+    "lang": "id",
+    "bytes": 1843903444,
+    "est_tokens": 439024629,
+    "sampled": 1500,
+    "avg_doc_chars": 248.0,
+    "lid_purity": 0.984,
+    "spam_rate": 0.004,
+    "short_share": 0.144,
+    "verdict": "WARN",
+    "reasons": [
+      "short=14.4%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/indonesian/culturax_id_new.txt": {
+    "lang": "id",
+    "bytes": 2442154862,
+    "est_tokens": 581465443,
+    "sampled": 1500,
+    "avg_doc_chars": 2419.0,
+    "lid_purity": 0.999,
+    "spam_rate": 0.0007,
+    "short_share": 0.0,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/indonesian/mc4_id_clean.txt": {
+    "lang": "id",
+    "bytes": 1599980950,
+    "est_tokens": 380947845,
+    "sampled": 1500,
+    "avg_doc_chars": 2822.0,
+    "lid_purity": 0.964,
+    "spam_rate": 0.0053,
+    "short_share": 0.0,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/indonesian/wiki_id.txt": {
+    "lang": "id",
+    "bytes": 937762208,
+    "est_tokens": 223276716,
+    "sampled": 1500,
+    "avg_doc_chars": 174.0,
+    "lid_purity": 0.878,
+    "spam_rate": 0.0,
+    "short_share": 0.4293,
+    "verdict": "WARN",
+    "reasons": [
+      "lid=0.878",
+      "short=42.9%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/japanese/culturax_ja_new.txt": {
+    "lang": "ja",
+    "bytes": 2642533435,
+    "est_tokens": 629174627,
+    "sampled": 1095,
+    "avg_doc_chars": 2071.0,
+    "lid_purity": 1.0,
+    "spam_rate": 0.0,
+    "short_share": 0.0,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/japanese/wiki_ja.txt": {
+    "lang": "ja",
+    "bytes": 3676057775,
+    "est_tokens": 875251851,
+    "sampled": 1500,
+    "avg_doc_chars": 85.0,
+    "lid_purity": 0.973,
+    "spam_rate": 0.0,
+    "short_share": 0.4873,
+    "verdict": "WARN",
+    "reasons": [
+      "short=48.7%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/math/openwebmath.txt": {
+    "lang": "math",
+    "bytes": 1449043888,
+    "est_tokens": 362260972,
+    "sampled": 1500,
+    "avg_doc_chars": 178.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.4113,
+    "verdict": "WARN",
+    "reasons": [
+      "short=41.1%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/mixed/facts_en.txt": {
+    "lang": "mixed",
+    "bytes": 179883200,
+    "est_tokens": 42829333,
+    "sampled": 1500,
+    "avg_doc_chars": 42.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.8387,
+    "verdict": "WARN",
+    "reasons": [
+      "short=83.9%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/mixed/facts_id.txt": {
+    "lang": "mixed",
+    "bytes": 158138800,
+    "est_tokens": 37652095,
+    "sampled": 1500,
+    "avg_doc_chars": 42.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.8507,
+    "verdict": "WARN",
+    "reasons": [
+      "short=85.1%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/mixed/facts_ja.txt": {
+    "lang": "mixed",
+    "bytes": 208743600,
+    "est_tokens": 49700857,
+    "sampled": 1500,
+    "avg_doc_chars": 19.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.9993,
+    "verdict": "WARN",
+    "reasons": [
+      "short=99.9%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/mixed/parallel_enid.txt": {
+    "lang": "mixed",
+    "bytes": 64610362,
+    "est_tokens": 15383419,
+    "sampled": 1500,
+    "avg_doc_chars": 79.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.2613,
+    "verdict": "WARN",
+    "reasons": [
+      "short=26.1%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/mixed/parallel_enja.txt": {
+    "lang": "mixed",
+    "bytes": 65040264,
+    "est_tokens": 15485777,
+    "sampled": 1500,
+    "avg_doc_chars": 51.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.506,
+    "verdict": "WARN",
+    "reasons": [
+      "short=50.6%"
+    ]
+  },
+  "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/mixed/parallel_jaid.txt": {
+    "lang": "mixed",
+    "bytes": 755776,
+    "est_tokens": 179946,
+    "sampled": 1500,
+    "avg_doc_chars": 47.0,
+    "lid_purity": null,
+    "spam_rate": 0.0,
+    "short_share": 0.6213,
+    "verdict": "WARN",
+    "reasons": [
+      "short=62.1%"
+    ]
+  }
+}

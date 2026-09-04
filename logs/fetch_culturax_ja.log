@@ -1,0 +1,12 @@
+[ja] streaming uonlp/CulturaX ...
+[ja] 50000 docs, 0.27GB (305 docs/s, skipped 13639)
+[ja] 100000 docs, 0.55GB (323 docs/s, skipped 27106)
+[ja] 150000 docs, 0.82GB (400 docs/s, skipped 40428)
+[ja] 200000 docs, 1.10GB (472 docs/s, skipped 54030)
+[ja] 250000 docs, 1.38GB (461 docs/s, skipped 67607)
+[ja] 300000 docs, 1.66GB (510 docs/s, skipped 81305)
+[ja] 350000 docs, 1.93GB (530 docs/s, skipped 94775)
+[ja] 400000 docs, 2.21GB (550 docs/s, skipped 108340)
+[ja] 450000 docs, 2.49GB (528 docs/s, skipped 121958)
+
+[ja] DONE: 485814 docs, 2.68GB, skipped 131630 -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/culturax_raw/culturax_ja.txt

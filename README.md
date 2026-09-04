@@ -1,24 +1,24 @@
-# Transformer 204M — CUDA Edition
+# Transformer 892M — CUDA Edition
 
-Standalone CUDA C++ implementation of a 204M parameter quadrilingual transformer.
-Designed to run on **Kaggle T4 x 2** GPUs.
+Standalone CUDA C++ implementation of a 892M parameter trilingual transformer
+(EN / JA / ID). Designed to run on **NVIDIA A100** GPUs (40GB or 80GB).
 
 ## Architecture
 
 | Parameter | Value |
 |-----------|-------|
-| d_model | 768 |
-| Layers | 18 |
-| Query Heads | 12 (GQA) |
-| KV Heads | 3 (4:1 ratio) |
+| d_model | 1280 |
+| Layers | 34 |
+| Query Heads | 20 (GQA) |
+| KV Heads | 5 (4:1 ratio) |
 | d_head | 64 |
-| FFN dim | 3072 (SwiGLU) |
+| FFN dim | 5120 (SwiGLU) |
 | Vocab | 65,536 (BPE) |
 | Max seq | 2048 |
-| Languages | EN, JA |
+| Languages | EN, JA, ID |
 | RoPE θ | 500,000 |
 | Weight tying | Yes |
-| Parameters | 204.3M
+| Parameters | 892M
 
 ## Quick Start (Kaggle)
 
@@ -81,7 +81,7 @@ transformer_100m_cuda/
 │   ├── bpe_tokenizer.h
 │   └── bpe_tokenizer.cpp
 ├── transformer/             # Model + training
-│   ├── train_cuda.cu        # Stage 1: Pretrain (100M arch)
+│   ├── train_cuda.cu        # Stage 1: Pretrain (892M arch)
 │   ├── train_cuda_unified.cu # Stage 2-5: SFT/DPO/Phone/RL
 │   ├── adamw_cuda.cuh       # Fused AdamW optimizer
 │   ├── model_config.h/cpp   # Architecture config
@@ -100,29 +100,30 @@ transformer_100m_cuda/
 
 ## Hardware Requirements
 
-- **GPU**: NVIDIA T4 (16GB, sm_75) × 1 or 2
+- **GPU**: NVIDIA A100 (40GB or 80GB, sm_80) × 1-4
 - **CUDA**: 11.8+ (12.x recommended)
 - **cuDNN**: 8.9+
 - **NCCL**: 2.18+ (for DDP multi-GPU)
-- **RAM**: 16GB+ system memory
-- **Disk**: ~50GB for corpus data
+- **RAM**: 32GB+ system memory
+- **Disk**: ~60GB for corpus data
 
-## Memory Budget (T4 16GB)
+## Memory Budget (A100 40GB)
 
 | Component | Size |
 |-----------|------|
-| Model params (FP16) | ~409 MB |
-| Master weights (FP32) | ~817 MB |
-| Optimizer states (2×FP32) | ~1,635 MB |
-| Activations (batch=24, seq=256) | ~3 GB |
+| Model params (FP16) | ~1.78 GB |
+| Master weights (FP32) | ~3.57 GB |
+| Optimizer states (2×FP32) | ~7.13 GB |
+| Gradients (FP16) | ~1.78 GB |
+| Activations + logits (batch=4, seq=2048) | ~2.5 GB |
 | KV cache + workspace | ~1 GB |
-| **Total** | **~6.9 GB** |
+| **Total** | **~17.8 GB** |
 
-Leaves ~11.6 GB headroom per GPU for larger batches or longer sequences.
+Leaves ~22 GB headroom per GPU for larger batches or longer sequences.
 
 ## Training Pipeline
 
-1. **Pretrain** (Stage 1): Curriculum learning with seq lengths 256→512→1024→2048
+1. **Pretrain** (Stage 1): Constant sequence length 2048 (no curriculum)
 2. **SFT** (Stage 2): Supervised fine-tuning on assistant responses
 3. **DPO** (Stage 3): Direct Preference Optimization with chosen/rejected pairs
 4. **Phone** (Stage 4): Phone assistant adapter (conservative LR)
@@ -150,9 +151,9 @@ train_sft_cuda --stage 5 →  rl_work/req.jsonl → rl_verifier.py → rl_work/r
 Key flags: `--n_samples` (default 6), `--rl_max_new` (80), `--rl_beta` (0.1),
 `--rl_temp` (0.8), `--rl_top_k` (50), `--rl_dir`, `--rl_workdir`, `--verifier_cmd`.
 
-> **Why it works at 204M:** RL amplifies completions the model can *already* get
+> **Why it works at 892M:** RL amplifies completions the model can *already* get
 > right after SFT. For simple, deterministic coding tasks with a dense verifiable
-> reward this is achievable at ~200M. It is **not** a substitute for SFT — start
+> reward this is achievable at ~900M. It is **not** a substitute for SFT — start
 > from a good SFT checkpoint and use `--ref_model` for the KL anchor.
 
 ## Differences from Original (MLX) Project
@@ -160,7 +161,7 @@ Key flags: `--n_samples` (default 6), `--rl_max_new` (80), `--rl_beta` (0.1),
 - All Apple MLX / Metal dependencies removed
 - ARM NEON intrinsics replaced with CUDA kernels
 - IOKit GPU monitoring replaced with NVML
-- Architecture constants fixed to 204M (was 476M in CUDA files)
+- Architecture constants fixed to 892M (D=1280, L=34, GQA 20:5, FFN 5120)
 - Proper residual connections in forward pass
 - Cosine LR schedule with warmup
 - Training state save/restore for Kaggle session resumption

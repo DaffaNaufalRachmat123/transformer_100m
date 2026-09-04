@@ -1,0 +1,14 @@
+{
+  "input": "data/culturax_raw/culturax_ja.txt",
+  "output": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/japanese/culturax_ja_new.txt",
+  "stats": {
+    "in": 485814,
+    "kept": 483276,
+    "len": 23,
+    "spam": 392,
+    "script": 354,
+    "url": 1747,
+    "dup": 22
+  },
+  "seconds": 304.1
+}

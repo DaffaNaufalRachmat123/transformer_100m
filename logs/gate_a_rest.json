@@ -1,0 +1,124 @@
+{
+  "data/corpus_1b/japanese/culturax_ja_new.txt": {
+    "lang": "ja",
+    "bytes": 2642533435,
+    "est_tokens": 629174627,
+    "sampled": 1095,
+    "avg_doc_chars": 2071.0,
+    "lid_purity": 1.0,
+    "spam_rate": 0.0,
+    "short_share": 0.0,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "data/corpus_1b/indonesian/culturax_id_new.txt": {
+    "lang": "id",
+    "bytes": 2442154862,
+    "est_tokens": 581465443,
+    "sampled": 1500,
+    "avg_doc_chars": 2419.0,
+    "lid_purity": 0.999,
+    "spam_rate": 0.0007,
+    "short_share": 0.0,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "data/corpus_1b/indonesian/culturax_id.txt": {
+    "lang": "id",
+    "bytes": 1843903444,
+    "est_tokens": 439024629,
+    "sampled": 1500,
+    "avg_doc_chars": 248.0,
+    "lid_purity": 0.954,
+    "spam_rate": 0.004,
+    "short_share": 0.144,
+    "verdict": "WARN",
+    "reasons": [
+      "short=14.4%"
+    ]
+  },
+  "data/corpus_1b/indonesian/wiki_id.txt": {
+    "lang": "id",
+    "bytes": 937762208,
+    "est_tokens": 223276716,
+    "sampled": 1500,
+    "avg_doc_chars": 174.0,
+    "lid_purity": 0.713,
+    "spam_rate": 0.0,
+    "short_share": 0.4293,
+    "verdict": "FAIL",
+    "reasons": [
+      "lid=0.713",
+      "short=42.9%"
+    ]
+  },
+  "data/corpus_1b/english/fineweb.txt": {
+    "lang": "en",
+    "bytes": 1031705432,
+    "est_tokens": 245644150,
+    "sampled": 1500,
+    "avg_doc_chars": 191.0,
+    "lid_purity": 0.993,
+    "spam_rate": 0.0,
+    "short_share": 0.278,
+    "verdict": "WARN",
+    "reasons": [
+      "short=27.8%"
+    ]
+  },
+  "data/corpus_1b/english/fineweb_edu_extra.txt": {
+    "lang": "en",
+    "bytes": 3286328660,
+    "est_tokens": 782459204,
+    "sampled": 1500,
+    "avg_doc_chars": 3609.0,
+    "lid_purity": 1.0,
+    "spam_rate": 0.0,
+    "short_share": 0.0,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "data/corpus_1b/english/openwebtext.txt": {
+    "lang": "en",
+    "bytes": 1025771126,
+    "est_tokens": 244231220,
+    "sampled": 1500,
+    "avg_doc_chars": 288.0,
+    "lid_purity": 0.994,
+    "spam_rate": 0.0013,
+    "short_share": 0.148,
+    "verdict": "WARN",
+    "reasons": [
+      "short=14.8%"
+    ]
+  },
+  "data/corpus_1b/mixed/facts_id.txt": {
+    "lang": "id",
+    "bytes": 158138800,
+    "est_tokens": 37652095,
+    "sampled": 1500,
+    "avg_doc_chars": 42.0,
+    "lid_purity": 0.999,
+    "spam_rate": 0.0,
+    "short_share": 0.8507,
+    "verdict": "WARN",
+    "reasons": [
+      "short=85.1%"
+    ]
+  },
+  "data/corpus_1b/mixed/parallel_enid.txt": {
+    "lang": "id",
+    "bytes": 64610362,
+    "est_tokens": 15383419,
+    "sampled": 1500,
+    "avg_doc_chars": 79.0,
+    "lid_purity": 0.481,
+    "spam_rate": 0.0,
+    "short_share": 0.2613,
+    "verdict": "FAIL",
+    "reasons": [
+      "lid=0.481",
+      "short=26.1%"
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+[dl] downloading (resumable)...
+[extract] streaming zip members...
+  500000 pairs (127419/s)
+  1000000 pairs (125042/s)
+  1500000 pairs (121872/s)
+  2000000 pairs (119058/s)
+[done] 2000000 pairs -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_raw/en-id/nllb.tsv
+[cleanup] zip deleted (freed ~5.9GB)

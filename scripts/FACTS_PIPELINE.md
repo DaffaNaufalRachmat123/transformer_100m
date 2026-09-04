@@ -49,7 +49,7 @@ bash scripts/run_facts_sft.sh
 | 2 (EN facts) | `sft_facts_en` | Stage 1 JA model | 1e-5 | 15000 | `checkpoints_facts_en` |
 | 3 (translation) | `sft_translation_focused` | Stage 2 EN model | 3e-5 | 15000 | `checkpoints_transl` |
 
-Rationale: the 204M model overfits JA (short, predictable answers) and underfits
+Rationale: the 892M model overfits JA (short, predictable answers) and underfits
 EN. Training language-by-language in separate folders lets each stage focus on
 one language, then translation is re-added last so it is not lost.
 
@@ -94,7 +94,7 @@ python3 scripts/eval_translation.py \
 
 ## Limits
 
-- 204M model + 2B pretrain tokens (~50% of Chinchilla) caps generalization.
+- 892M model + 2B pretrain tokens (~12% of Chinchilla) caps generalization.
 - Fact coverage is bounded by Wikidata (country/geography/elements); for more
   breadth, fetch additional categories (person, planets, languages) when
   Wikidata rate-limits allow.

@@ -1,0 +1,23 @@
+{
+  "en": {
+    "lines": 4105600,
+    "unique_lines": 10264,
+    "max_repetition": 400,
+    "issues": {},
+    "verdict": "PASS"
+  },
+  "ja": {
+    "lines": 3695200,
+    "unique_lines": 9238,
+    "max_repetition": 400,
+    "issues": {},
+    "verdict": "PASS"
+  },
+  "id": {
+    "lines": 3693600,
+    "unique_lines": 9234,
+    "max_repetition": 400,
+    "issues": {},
+    "verdict": "PASS"
+  }
+}

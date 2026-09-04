@@ -13,3 +13,5 @@ __pycache__/
 suberes-414115-*.json
 gdrive_token.json
 client_secret_*.json
+.venv/
+gguf/

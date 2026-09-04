@@ -1,12 +1,12 @@
 // =============================================================================
-// train_cuda_unified.cu — SFT / DPO / Phone Training (CUDA, 204M Model)
+// train_cuda_unified.cu — SFT / DPO / Phone Training (CUDA, 892M Model)
 //
 // Single binary, stage selected via --stage flag:
 //   --stage 2  = SFT (Supervised Fine-Tuning)
 //   --stage 3  = DPO (Direct Preference Optimization)
 //   --stage 4  = Phone Adapter
 //
-// Architecture: 204M (D=768, L=18, QH=12, KVH=3, DH=64, FFN=3072)
+// Architecture: 892M (D=1280, L=34, QH=20, KVH=5, DH=64, FFN=5120)
 // Target: Kaggle T4 x2 (sm_75, FP16)
 //
 // This file uses the SAME correct forward/backward as pretraining:
@@ -51,13 +51,13 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
-// ─── Architecture constants (204M model — matches pretrain) ────────────────
-static constexpr int D_MODEL    = 768;
-static constexpr int N_LAYERS   = 18;
-static constexpr int N_Q_HEADS  = 12;
-static constexpr int N_KV_HEADS = 3;
+// ─── Architecture constants (892M model — matches pretrain) ───────────────
+static constexpr int D_MODEL    = 1280;
+static constexpr int N_LAYERS   = 34;
+static constexpr int N_Q_HEADS  = 20;
+static constexpr int N_KV_HEADS = 5;
 static constexpr int D_HEAD     = 64;
-static constexpr int FFN_DIM    = 3072;
+static constexpr int FFN_DIM    = 5120;
 static constexpr int MODEL_VOCAB = 65536;
 static constexpr float ROPE_THETA = 500000.0f;
 
@@ -326,9 +326,14 @@ std::vector<RLSample> load_rl_data(const std::string& dir, BPEEncoder& tok, int 
             std::string prompt_txt = extract_json_string(line, "prompt");
             std::string mock_input = extract_json_string(line, "mock_input");
             std::string expected   = extract_json_string(line, "expected_output");
+            // Optional per-row system prompt (math rows use a math-tutor
+            // system; default stays the coding assistant).
+            std::string system     = extract_json_string(line, "system");
             if (prompt_txt.empty() || expected.empty()) continue;
 
-            std::string prefix = "<|system|>You are a coding assistant.<|user|>"
+            if (system.empty())
+                system = "You are a coding assistant.";
+            std::string prefix = "<|system|>" + system + "<|user|>"
                                + prompt_txt + "<|assistant|>";
             auto ids = tok.encode(prefix, true, true);
             if ((int)ids.size() > max_seq) ids.resize(max_seq);
@@ -743,7 +748,7 @@ int main(int argc, char** argv) {
 #endif
 
     const char* stage_names[] = {"", "", "SFT", "DPO", "Phone", "RL"};
-    printf("\n[Stage %d: %s] 204M model | FP16 | batch=%d | seq=%d | lr=%.1e%s\n",
+    printf("\n[Stage %d: %s] 892M model | FP16 | batch=%d | seq=%d | lr=%.1e%s\n",
            g_stage, stage_names[g_stage], g_batch_size, g_max_seq, g_lr,
            g_use_ddp ? " | DDP x2" : "");
 
@@ -1595,8 +1600,11 @@ int main(int argc, char** argv) {
                         std::vector<TokenID> comp(seq_tokens[g].begin() + plen[g],
                                                   seq_tokens[g].end());
                         std::string code = tok.decode(comp, true);
+                        // pass lang through as-is (en/ja/id) — the verifier
+                        // only logs it, but coercion hid Indonesian rows
+                        std::string lang_out = s.lang.empty() ? "en" : s.lang;
                         rf << "{\"id\":" << g
-                           << ",\"lang\":\"" << ((s.lang == "ja") ? "ja" : "en") << "\""
+                           << ",\"lang\":\"" << lang_out << "\""
                            << ",\"code\":\"" << esc(code) << "\""
                            << ",\"input\":\"" << esc(s.mock_input) << "\""
                            << ",\"expected\":\"" << esc(s.expected_output) << "\"}\n";

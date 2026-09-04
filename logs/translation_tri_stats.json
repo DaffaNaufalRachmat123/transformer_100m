@@ -1,0 +1,30 @@
+{
+  "train_rows": 2003808,
+  "eval_rows": 18000,
+  "train_by_lang": {
+    "en-id": 600000,
+    "id-en": 600000,
+    "ja-en": 400000,
+    "en-ja": 400000,
+    "ja-id": 1904,
+    "id-ja": 1904
+  },
+  "eval_by_lang": {
+    "id-en": 3000,
+    "en-id": 3000,
+    "en-ja": 3000,
+    "id-ja": 3000,
+    "ja-en": 3000,
+    "ja-id": 3000
+  },
+  "train_by_bucket": {
+    "short": 951454,
+    "medium": 705635,
+    "long": 346719
+  },
+  "train_by_pair": {
+    "en-id": 1200000,
+    "en-ja": 800000,
+    "ja-id": 3808
+  }
+}

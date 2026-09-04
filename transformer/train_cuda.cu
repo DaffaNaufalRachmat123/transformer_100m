@@ -48,13 +48,16 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
-// ─── Architecture constants (204M model — EN+JA translation) ────────────────
-static constexpr int D_MODEL    = 768;
-static constexpr int N_LAYERS   = 18;
-static constexpr int N_Q_HEADS  = 12;
-static constexpr int N_KV_HEADS = 3;
+// ─── Architecture constants (892M model — trilingual 1B build) ────────────
+// D=1280, L=34, GQA 20Q:5KV (d_head 64), SwiGLU FFN 4x.
+// Params: embed 83.9M (tied) + 34 layers x 23.77M + final norm ≈ 892M.
+// Kernels are dimension-agnostic (grad_check passed D=64..3072).
+static constexpr int D_MODEL    = 1280;
+static constexpr int N_LAYERS   = 34;
+static constexpr int N_Q_HEADS  = 20;
+static constexpr int N_KV_HEADS = 5;
 static constexpr int D_HEAD     = D_MODEL / N_Q_HEADS;  // 64
-static constexpr int FFN_DIM    = 3072;
+static constexpr int FFN_DIM    = 5120;
 static constexpr int MODEL_VOCAB = 65536;
 static constexpr float ROPE_THETA = 500000.0f;
 
@@ -66,7 +69,7 @@ static std::string g_bpe_path       = "";  // empty = use vocab_dir text format
 static std::string g_optimizer      = "adamw";
 static uint64_t g_max_tokens        = 2'000'000'000ULL;
 static int g_batch_size             = 8;   // T4 16GB fits 8 easily for 100M
-static int g_max_seq                = 256;
+static int g_max_seq                = 2048;  // constant 2048 (no curriculum)
 static bool g_resume                = false;
 static bool g_use_ddp               = false;
 static int  g_num_gpus              = 0;    // 0 = auto-detect

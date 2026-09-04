@@ -1,0 +1,10 @@
+  [opus:opensubtitles] downloading https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/moses/en-id.txt.zip
+  [opus:opensubtitles] kept 800000 -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_raw/en-id/opensubtitles.tsv
+  [opus:qed] downloading https://object.pouta.csc.fi/OPUS-QED/v2.0a/moses/en-id.txt.zip
+  [opus:qed] kept 210178 -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_raw/en-id/qed.tsv
+  [opus:globalvoices] downloading https://object.pouta.csc.fi/OPUS-GlobalVoices/v2018q4/moses/en-id.txt.zip
+  [opus:globalvoices] kept 9505 -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_raw/en-id/globalvoices.tsv
+  [opus:wikimatrix] downloading https://object.pouta.csc.fi/OPUS-WikiMatrix/v1/moses/en-id.txt.zip
+  [opus:wikimatrix] kept 200000 -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_raw/en-id/wikimatrix.tsv
+
+Done fetching pair en-id.

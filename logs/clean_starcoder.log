@@ -1,0 +1,2 @@
+starcoder_raw.txt: {'repos': 265797, 'lines_in': 96865373, 'lines_dropped': 3396, 'chunks_out': 3788107, 'bytes_out': 3197818326}
+  -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/code/starcoder_clean.txt (3.20GB, 163s)

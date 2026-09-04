@@ -1,0 +1,27 @@
+[id] streaming uonlp/CulturaX ...
+[id] 50000 docs, 0.12GB (314 docs/s, skipped 4660)
+[id] 100000 docs, 0.24GB (602 docs/s, skipped 9358)
+[id] 150000 docs, 0.35GB (867 docs/s, skipped 14020)
+[id] 200000 docs, 0.47GB (942 docs/s, skipped 18647)
+[id] 250000 docs, 0.59GB (751 docs/s, skipped 23375)
+[id] 300000 docs, 0.71GB (883 docs/s, skipped 27902)
+[id] 350000 docs, 0.82GB (1011 docs/s, skipped 32464)
+[id] 400000 docs, 0.94GB (1134 docs/s, skipped 36974)
+[id] 450000 docs, 1.06GB (1082 docs/s, skipped 41603)
+[id] 500000 docs, 1.18GB (901 docs/s, skipped 46165)
+[id] 550000 docs, 1.29GB (980 docs/s, skipped 50758)
+[id] 600000 docs, 1.41GB (1056 docs/s, skipped 55516)
+[id] 650000 docs, 1.53GB (1131 docs/s, skipped 60163)
+[id] 700000 docs, 1.65GB (1006 docs/s, skipped 64858)
+[id] 750000 docs, 1.77GB (996 docs/s, skipped 69509)
+[id] 800000 docs, 1.88GB (1054 docs/s, skipped 74105)
+[id] 850000 docs, 2.00GB (1110 docs/s, skipped 78735)
+[id] 900000 docs, 2.12GB (1166 docs/s, skipped 83349)
+[id] 950000 docs, 2.23GB (1152 docs/s, skipped 88046)
+[id] 1000000 docs, 2.35GB (1088 docs/s, skipped 92663)
+[id] 1050000 docs, 2.47GB (1135 docs/s, skipped 97326)
+[id] 1100000 docs, 2.59GB (1139 docs/s, skipped 101900)
+
+[id] DONE: 1141274 docs, 2.68GB, skipped 105719 -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/culturax_raw/culturax_id.txt
+'[Errno 9] Bad file descriptor' thrown while requesting GET https://huggingface.co/datasets/uonlp/CulturaX/resolve/6a8734bc69fefcbb7735f4f9250f43e4cd7a442e/id/id_part_00001.parquet
+Retrying in 1s [Retry 1/5].

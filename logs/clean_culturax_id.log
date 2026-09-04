@@ -1,0 +1,7 @@
+dedup base: culturax_id.txt -> 7245651 lines (7245651 hashes)
+dedup base: wiki_id.txt -> 5097393 lines (12337605 hashes)
+dedup base: mc4_id_clean.txt -> 587381 lines (12924986 hashes)
+  500000 in, 437138 kept (87.4%), 330s
+
+culturax_id.txt: {'in': 1141274, 'kept': 1025129, 'len': 39, 'spam': 62565, 'script': 90, 'url': 281, 'dup': 53170}
+  -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/indonesian/culturax_id_new.txt (721s)

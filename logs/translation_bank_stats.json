@@ -1,0 +1,17 @@
+{
+  "en-id": {
+    "train_pairs": 51000,
+    "eval_pairs": 9000,
+    "injection_lines": 20400000
+  },
+  "ja-id": {
+    "train_pairs": 4917,
+    "eval_pairs": 867,
+    "injection_lines": 1966800
+  },
+  "en-ja": {
+    "train_pairs": 51000,
+    "eval_pairs": 9000,
+    "injection_lines": 20400000
+  }
+}

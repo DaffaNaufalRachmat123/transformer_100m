@@ -1,0 +1,10 @@
+Warning : `load_model` does not return WordVectorModel or SupervisedModel any more, but a `FastText` object which is very similar.
+LID model loaded: /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/lid.176.bin
+[globalvoices] in=9505 junk=13 lid_rej=1681 num_rej=129 ratio_rej=57 dup=0 kept=7625
+[opensubtitles] in=800000 junk=2641 lid_rej=207721 num_rej=1480 ratio_rej=11039 dup=12 kept=577107
+[qed] in=210178 junk=895 lid_rej=31814 num_rej=1140 ratio_rej=3567 dup=3441 kept=169321
+[tatoeba] in=25547 junk=3 lid_rej=2851 num_rej=24 ratio_rej=52 dup=804 kept=21813
+[wikimatrix] in=200000 junk=92 lid_rej=10131 num_rej=4026 ratio_rej=87 dup=4 kept=185660
+
+Done: 961526 clean en-id pairs -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_en_id.tsv
+  by source: {'globalvoices': 7625, 'opensubtitles': 577107, 'qed': 169321, 'tatoeba': 21813, 'wikimatrix': 185660}

@@ -1,0 +1,24 @@
+{
+  "facts": 4580,
+  "exposures": 400,
+  "by_lang": {
+    "en": {
+      "unique_renderings": 10264,
+      "total_lines": 4105600,
+      "est_tokens": 39754260,
+      "path": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_en.txt"
+    },
+    "ja": {
+      "unique_renderings": 9238,
+      "total_lines": 3695200,
+      "est_tokens": 63802800,
+      "path": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_ja.txt"
+    },
+    "id": {
+      "unique_renderings": 9234,
+      "total_lines": 3693600,
+      "est_tokens": 30718980,
+      "path": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_id.txt"
+    }
+  }
+}

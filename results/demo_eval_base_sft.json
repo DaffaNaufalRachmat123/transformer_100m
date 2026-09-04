@@ -1,0 +1,333 @@
+{
+  "model": "translation_resources/ckpt_sft_final.safetensors",
+  "sections": {
+    "FACTS EN": {
+      "n": 10,
+      "lang_ok": 0,
+      "value_ok": 0,
+      "items": [
+        {
+          "q": "What city serves as the capital of Municipality of Žiri?",
+          "gold": "The capital of Municipality of Žiri is Žiri.",
+          "pred": "市の人口は約２５万人です。"
+        },
+        {
+          "q": "On what date was Saint Kitts and Nevis founded?",
+          "gold": "Saint Kitts and Nevis was founded on 27 February 1967.",
+          "pred": "マディソンとの？"
+        },
+        {
+          "q": "I want to know which continent Bangladesh is in.",
+          "gold": "Bangladesh is in Asia.",
+          "pred": "この人の何がどんなものか知りたいんだ。"
+        },
+        {
+          "q": "About how many people live in Togo?",
+          "gold": "The population of Togo is about 7797694.",
+          "pred": "どのくらいの人が住んでいる？"
+        },
+        {
+          "q": "What money is used in Tonga?",
+          "gold": "The currency of Tonga is Tongan paʻanga.",
+          "pred": "トカはいくらでしょう？"
+        },
+        {
+          "q": "What is the capital of Russia?",
+          "gold": "The capital of Russia is Moscow.",
+          "pred": "大統領はロシアの首都です"
+        },
+        {
+          "q": "How many square kilometers is Northern Cyprus?",
+          "gold": "The area of Northern Cyprus is about 3355 square kilometers.",
+          "pred": "南に、いくつの山がいます。"
+        },
+        {
+          "q": "What is an official language of Democratic Republic of the Congo?",
+          "gold": "An official language of Democratic Republic of the Congo is French.",
+          "pred": "大統領の国民的な言葉は"
+        },
+        {
+          "q": "Tell me the driving side of Serbia.",
+          "gold": "In Serbia, people drive on the right.",
+          "pred": "車の運転手はどこだ？"
+        },
+        {
+          "q": "Tell me the highest point of Russia.",
+          "gold": "The highest point of Russia is Mount Elbrus.",
+          "pred": "一番高いところを教えてくれ"
+        }
+      ]
+    },
+    "FACTS JA": {
+      "n": 10,
+      "lang_ok": 6,
+      "value_ok": 1,
+      "items": [
+        {
+          "q": "アメリカ合衆国の面積をご存知ですか？",
+          "gold": "アメリカ合衆国の面積はおよそ9826675平方キロメートルです。",
+          "pred": "アメリカ合衆国の面積を意味する?"
+        },
+        {
+          "q": "アダナ州の州都はどこですか？",
+          "gold": "アダナ州の州都はアダナです。",
+          "pred": "What is the capital of the state of New York?"
+        },
+        {
+          "q": "ハフニウムの原子番号について教えてください。",
+          "gold": "ハフニウムの原子番号は72です。",
+          "pred": "ハフニウムの原子番号についての回数は何答えますか。"
+        },
+        {
+          "q": "マダガスカルで最も高い地点はどこですか？",
+          "gold": "マダガスカルで一番高い場所はマロモコトロ山です。",
+          "pred": "'s the most high point of your life?"
+        },
+        {
+          "q": "グレナダの首都は何ですか？",
+          "gold": "グレナダの首都はセントジョージズです。",
+          "pred": "は　どこに行く?"
+        },
+        {
+          "q": "チリの公用語について教えてください。",
+          "gold": "チリの公用語はスペイン語です。",
+          "pred": "You can tell me the name of a place in which you are being told."
+        },
+        {
+          "q": "アルミニウムの化学記号を教えてください。",
+          "gold": "アルミニウムの化学記号はAlです。",
+          "pred": "\" Algoi is a no、しかし、何て言えばいいのです？\\\""
+        },
+        {
+          "q": "アンゴラの通貨を答えてください。",
+          "gold": "アンゴラの通貨はクワンザです。",
+          "pred": "は　ダガってあなたの通貨をくれ。"
+        },
+        {
+          "q": "南アフリカ共和国は左通行ですか、右通行ですか？",
+          "gold": "南アフリカ共和国では左通行です。",
+          "pred": "are in the in南北朝人国道 is a car, sir?"
+        },
+        {
+          "q": "ガーナが設立された日を教えてください。",
+          "gold": "ガーナは1957年に建国されました。",
+          "pred": "You have a date on the day that she is founded and said to be in time."
+        }
+      ]
+    },
+    "TRANSLATION EN→JA": {
+      "n": 20,
+      "lang_ok": 20,
+      "avg_chrf": 0.08834296589019007,
+      "items": [
+        {
+          "src": "- Roughly, yes.",
+          "gold": "大体そうだ",
+          "pred": "お前は？"
+        },
+        {
+          "src": "The company identifies the name Mar-a-Lago as Spanish for \"Sea-to-Lake.\"[7]",
+          "gold": "マー・ア・ラゴはスペイン語であり、英語でSea to Lakeという意味である。[7]",
+          "pred": "マクダネルは「マクダネル」の名を使って、 \\\"フランコル\\\"と"
+        },
+        {
+          "src": "The news of the accident was a great shock to me.",
+          "gold": "その事故のニュースは、私には大変衝撃的なものだった。",
+          "pred": "その事故の知らせは私にとって大変なことだった。"
+        },
+        {
+          "src": "We won't become martyrizes before we bring our enemies to their kneels.",
+          "gold": "敵を倒すまで、 殉教というシャーベットを飲むこともないだろう",
+          "pred": "我々は敵の手に渡る前に 我々は彼らを � （う）といえない"
+        },
+        {
+          "src": "I can't hold your hand?",
+          "gold": "君の手を握ってはだめなの？",
+          "pred": "手を取ってはいけないの？"
+        },
+        {
+          "src": "Chill out!",
+          "gold": "落ちつけよ。",
+          "pred": "出て行け！"
+        },
+        {
+          "src": "Save them from themselves.",
+          "gold": "彼らを彼ら自身から救え",
+          "pred": "彼らからの連絡を"
+        },
+        {
+          "src": "Service-wise, this is over and above.",
+          "gold": "契約料金の範囲を超えている",
+          "pred": "この通話は終わりです"
+        },
+        {
+          "src": "Both of us are from Tampa.",
+          "gold": "私たちは２人ともタンパの出身です。",
+          "pred": "彼らはカナダから来た"
+        },
+        {
+          "src": "But I can take it from here.",
+          "gold": "でも ここからそれを取れる",
+          "pred": "ここからは持ち帰る"
+        },
+        {
+          "src": "You two know each other?",
+          "gold": "あなたは2 _お互いを知っていますか？",
+          "pred": "お前ら二人は知ってるのか？"
+        },
+        {
+          "src": "Canada is a good place to go if it's your first experience living abroad.",
+          "gold": "海外生活初心者にとっては、カナダはいい国だと思います。",
+          "pred": "日本は初めて外国に行くところが良いんだ。"
+        },
+        {
+          "src": "It was set up so that Mayka would be declared dead, and I'd confess.",
+          "gold": "マイカの死が確認されて",
+          "pred": "Maykaが死んでも、私は決めたと思う。"
+        },
+        {
+          "src": "Welcome to the Channel 6 Morning News.",
+          "gold": "チャネル6 朝のニュースへようこそ",
+          "pred": "チャット・チャージの時間だ"
+        },
+        {
+          "src": "The only one who'd listen to us was the family cat, Cecil.",
+          "gold": "聞き手は飼いネコのセシル",
+          "pred": "家族の猫だけだった"
+        },
+        {
+          "src": "104–101 BCE War of the Heavenly Horses",
+          "gold": "104–101 BCE 汗血馬戦争 (漢の大宛遠征)",
+          "pred": "大地の王国戦争"
+        },
+        {
+          "src": "That would have been funny.",
+          "gold": "あれば可笑しかったのに",
+          "pred": "それは面白いわ"
+        },
+        {
+          "src": "You were dealing drugs back then, weren't you?",
+          "gold": "君は　その当時麻薬の取り引きを してたんだろう？",
+          "pred": "彼は今までに薬を持っていたのか？"
+        },
+        {
+          "src": "- You said you found something. - Several things, yeah.",
+          "gold": "- 何か見つけたようね",
+          "pred": "見つけたのね"
+        },
+        {
+          "src": "That's 14 days. And what's 14?",
+          "gold": "14日　14は？",
+          "pred": "１４日だ それで14人はどうなる"
+        }
+      ]
+    },
+    "TRANSLATION JA→EN": {
+      "n": 20,
+      "lang_ok": 18,
+      "avg_chrf": 0.2100119533919247,
+      "items": [
+        {
+          "src": "そう言ってた",
+          "gold": "I'm sure he said Iron Crusaders.",
+          "pred": "He said so."
+        },
+        {
+          "src": "三婦の女房おつぎは、早速磯之丞を一緒につれて帰ってほしいと頼む。",
+          "gold": "Sabu's wife Otsugi asked her to bring Isonojo back with them immediately.",
+          "pred": "He asked for the three ladies of the four girls and he was told to go home with them."
+        },
+        {
+          "src": "！ 率直に言うと　ノーとは　言えなかった",
+          "gold": "Well, frankly, I couldn't say no to him.",
+          "pred": "I didn't say it was a good idea."
+        },
+        {
+          "src": "速い方がいいな",
+          "gold": "Yeah. No, I want to go fast.",
+          "pred": "You don't have to do that with me."
+        },
+        {
+          "src": "友人の為なら何でも",
+          "gold": "Anything for a friend.",
+          "pred": "If I was a friend, I'd do anything for you."
+        },
+        {
+          "src": "トムを見つけることができた？",
+          "gold": "Have you found Tom?",
+          "pred": "could you find Tom?"
+        },
+        {
+          "src": "こんばんは、ジョン",
+          "gold": "- Evenin', John.",
+          "pred": "ようこそジョン"
+        },
+        {
+          "src": "水をワインに変える男を見つけたら",
+          "gold": "They see a guy turning water into wine,",
+          "pred": "If I find a man who can turn into water with the wine,"
+        },
+        {
+          "src": "- 品質はどうだ？",
+          "gold": "Good quality, you like?",
+          "pred": "What about the other side?"
+        },
+        {
+          "src": "今晩ポリーと映画に 行くが　どう思う？",
+          "gold": "How about you, Polly and me go out to a movie tonight?",
+          "pred": "What do you think, I was going to go with the movie at night tonight?"
+        },
+        {
+          "src": "ええと...",
+          "gold": "Uh, Kevin...",
+          "pred": "...I mean, I just..."
+        },
+        {
+          "src": "- かなりポイントに。 - はい、確かに。",
+          "gold": "indeed.",
+          "pred": "slaten the point of a thing."
+        },
+        {
+          "src": "高揚か 浪人しては派手な言葉遣いだ",
+          "gold": "Oh, enhances. Fancy word for a sellsword.",
+          "pred": "A lot of people are going to be so stupid as a nod and talk."
+        },
+        {
+          "src": "お前は それを使って 銀行復帰を果たした",
+          "gold": "You used that to return to the bank.",
+          "pred": "You used the bank to get back on a bank."
+        },
+        {
+          "src": "順番があっちこっちいっちゃったんで　もとに戻します",
+          "gold": "Let's take turns again.",
+          "pred": "You know, I got a turn to go, and then I'll be back in the next."
+        },
+        {
+          "src": "- 貨物列車に襲われた",
+          "gold": "- The girl played a freight train.",
+          "pred": "He was hit by a train."
+        },
+        {
+          "src": "ボス　わかりません",
+          "gold": "I don't know, boss.",
+          "pred": "You don't know what I mean."
+        },
+        {
+          "src": "父は中御門経任。",
+          "gold": "His father was Tsunetada NAKAMIKADO.",
+          "pred": "He was the head of Naka no Koshitsu ODA."
+        },
+        {
+          "src": "ああ、セリブ警部は？",
+          "gold": "You, too, Mr. Self.",
+          "pred": ", what about the head of the team?"
+        },
+        {
+          "src": "わかりませんが　クリークは 何か隠し事をしていた",
+          "gold": "I don't know. Creek was hiding something else.",
+          "pred": "は　クリ�"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "total_facts": 2716,
+  "by_category": {
+    "capital": 200,
+    "currency": 163,
+    "official_language": 342,
+    "population": 207,
+    "highest_point": 109,
+    "continent_of": 200,
+    "area": 205,
+    "element_symbol": 155,
+    "element_number": 155,
+    "driving_side": 205,
+    "calling_code": 567,
+    "founding_date": 189,
+    "capital_admin": 19
+  },
+  "dropped_missing_label": 172,
+  "dropped_known_fixes": 0,
+  "id_label_leak_candidates": 295,
+  "alias_entities": 914,
+  "total_aliases": 5066
+}

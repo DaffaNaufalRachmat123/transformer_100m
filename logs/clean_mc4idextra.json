@@ -1,0 +1,14 @@
+{
+  "input": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_mobile_claude/data/corpus_final/indonesian/mc4_id_extra.txt",
+  "output": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/indonesian/mc4_id_clean.txt",
+  "stats": {
+    "in": 663413,
+    "kept": 587381,
+    "len": 17983,
+    "spam": 57561,
+    "script": 474,
+    "url": 0,
+    "dup": 14
+  },
+  "seconds": 453.3
+}

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  run_rl_pipeline.sh — Auto-run the RL pipeline for the 204M model.
+#  run_rl_pipeline.sh — Auto-run the RL pipeline for the 892M model.
 #
 #  Flow (adds coding on top of the existing JA/EN-facts + translation model):
 #

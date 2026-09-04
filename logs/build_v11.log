@@ -1,0 +1,19 @@
+V11 loader sanity: 4411 facts, 12 categories
+  by category: {'area': 208, 'capital': 206, 'capital_admin': 2438, 'continent_of': 208, 'currency': 202, 'driving_side': 205, 'element_number': 173, 'element_symbol': 118, 'founding_date': 207, 'highest_point': 111, 'official_language': 128, 'population': 207}
+  facts with value aliases: 2487
+  stats: {'raw_kept': 4691, 'conflict_keys': 84, 'override_drops': 81, 'name_disambig_drops': 49}
+  oversample raw kept: 4691
+  oversample conflicts dropped: 84 fact keys
+  oversample override drops: 81
+  profile: v10_trilingual
+  target rows: 500000 (EN share 0.34)
+  train fact keys: 4036
+  eval fact keys: 375
+
+========================================================
+Final oversampled facts dataset: 500000 train + 6316 eval rows
+  train langs: {'en': 170000, 'ja': 165000, 'id': 165000}
+  eval langs: {'en': 2268, 'ja': 2024, 'id': 2024}
+  train categories: {'official_language': 86043, 'highest_point': 84687, 'element_symbol': 51496, 'population': 43785, 'area': 19367, 'continent_of': 6580, 'element_number': 32748, 'capital_admin': 46345, 'capital': 31689, 'currency': 57998, 'driving_side': 16566, 'founding_date': 22696}
+  Output: /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/sft_data/sft_facts_v11/train.jsonl
+  Eval:   /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/sft_data/sft_facts_v11/eval.jsonl

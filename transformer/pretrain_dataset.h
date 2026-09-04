@@ -14,6 +14,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -36,7 +37,9 @@ enum class Language : uint8_t {
     English,
     Japanese,
     Mixed,
-    Unknown
+    Unknown,
+    Code,      // curated code corpus (starcoder) — 1B trilingual build
+    Math       // openwebmath reasoning corpus — 1B trilingual build
 };
 
 inline Language lang_from_dirname(const std::string& name) {
@@ -44,19 +47,52 @@ inline Language lang_from_dirname(const std::string& name) {
     if (name == "english")    return Language::English;
     if (name == "japanese")   return Language::Japanese;
     if (name == "mixed")      return Language::Mixed;
+    if (name == "code")       return Language::Code;
+    if (name == "math")       return Language::Math;
     return Language::Unknown;
 }
 
 // Per-phase language sampling weights.
-// Two supported corpora layouts:
-//   - Bilingual (EN+JA, no indonesian/ dir): EN 0.55 / JA 0.45 (original).
-//   - Trilingual (indonesian/ dir present):   EN 0.30 / JA 0.25 / ID 0.45.
-//     ID-heavy for the language-acquisition continuation phase; renormalize
-//     back toward EN/JA once ID competence is reached.
-// The caller passes whether Indonesian data exists so the same binary can
-// serve both corpus layouts without recompiling.
-inline float lang_sample_weight(Language l, int phase = 0, bool has_indonesian = false) {
+// Three supported corpus layouts:
+//   - Bilingual (EN+JA only):               EN 0.55 / JA 0.45 (original).
+//   - Trilingual (indonesian/ present):     EN 0.30 / JA 0.25 / ID 0.45.
+//   - Six-bucket 1B build (code/ + math/ present):
+//     EN 0.35 / JA 0.25 / ID 0.20 / Code 0.09 / Math 0.03 / Mixed 0.08.
+//     Mixed carries fact-injection + parallel pairs, so it gets real weight.
+// Six-bucket weights are overridable via environment variables (read once
+// per process; this is a cold path) — used for smoke runs and ablations,
+// e.g. zero out the code bucket when running on the newline-stripping
+// vocab_6 tokenizer, or boost mixed for low-token-budget smokes:
+//   TW_W_EN, TW_W_JA, TW_W_ID, TW_W_CODE, TW_W_MATH, TW_W_MIXED
+// The caller passes which optional buckets exist so the same binary can
+// serve every corpus layout without recompiling.
+inline float lang_sample_weight(Language l, int phase = 0,
+                                bool has_indonesian = false,
+                                bool has_code_math = false) {
     (void)phase;  // single-phase, no curriculum
+    if (has_code_math) {
+        struct SixBucketWeights {
+            float en, ja, id, code, math, mixed;
+            static float env_or(const char* key, float def) {
+                const char* v = std::getenv(key);
+                return v ? (float)std::atof(v) : def;
+            }
+            SixBucketWeights()
+                : en(env_or("TW_W_EN", 0.35f)), ja(env_or("TW_W_JA", 0.25f)),
+                  id(env_or("TW_W_ID", 0.20f)), code(env_or("TW_W_CODE", 0.09f)),
+                  math(env_or("TW_W_MATH", 0.03f)), mixed(env_or("TW_W_MIXED", 0.08f)) {}
+        };
+        static const SixBucketWeights W;
+        switch (l) {
+            case Language::English:    return W.en;
+            case Language::Japanese:   return W.ja;
+            case Language::Indonesian: return W.id;
+            case Language::Code:       return W.code;
+            case Language::Math:       return W.math;
+            case Language::Mixed:      return W.mixed;
+            default:                   return 0.00f;
+        }
+    }
     if (has_indonesian) {
         switch (l) {
             case Language::English:    return 0.30f;

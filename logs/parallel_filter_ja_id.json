@@ -1,0 +1,16 @@
+{
+  "pair": "ja-id",
+  "total_kept": 4904,
+  "by_source": {
+    "tatoeba": 4904
+  },
+  "stats": {
+    "tatoeba:in": 6193,
+    "tatoeba:junk_rej": 0,
+    "tatoeba:lid_rej": 601,
+    "tatoeba:num_rej": 16,
+    "tatoeba:ratio_rej": 672,
+    "tatoeba:dup_rej": 0,
+    "tatoeba:kept": 4904
+  }
+}

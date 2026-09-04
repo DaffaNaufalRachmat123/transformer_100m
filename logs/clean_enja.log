@@ -1,0 +1,2 @@
+Warning : `load_model` does not return WordVectorModel or SupervisedModel any more, but a `FastText` object which is very similar.
+parallel_enja.tsv: in=1960287 junk=579 lid=219469 num=10238 ratio=682908 dup=0 -> kept 1047093 (53.4%) -> data/parallel_en_ja.tsv

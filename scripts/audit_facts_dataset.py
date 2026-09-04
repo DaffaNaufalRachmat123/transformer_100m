@@ -24,7 +24,8 @@ GENERIC_EN = re.compile(
     r"what is known about|tell me what you know about|please explain|"
     r"what do you think)\b(?!.*\b(capital|currency|official language|population|"
     r"highest point|highest-point|highest place|continent|area|chemical symbol|chemical-symbol|atomic number|atomic-number|"
-    r"people live|money|element)\b)",
+    r"people live|money|element|founding date|founded|established|driving side|"
+    r"side of the road|left or the right|traffic on the left)\b)",
     re.I,
 )
 GENERIC_JA_MARKERS = [
@@ -38,6 +39,8 @@ JA_ATTR_MARKERS = [
     "首都", "通貨", "公用語", "人口", "一番高い", "最高地点", "大陸", "面積",
     "化学記号", "原子番号", "公式に使われる言語", "何人", "住んでいます", "お金",
     "元素", "割り当てられた番号", "表す記号",
+    # V11 categories
+    "州都", "建国", "設立", "どちら側", "通行", "国際電話", "国番号", "ダイヤル",
 ]
 EN_ATTR_MARKERS = [
     "capital", "currency", "official language", "population", "highest point",
@@ -45,6 +48,9 @@ EN_ATTR_MARKERS = [
     "language", "official in", "capital city", "money", "officially used",
     "highest place", "square kilometers", "symbol represents", "element", "people live",
     "chemical-symbol", "atomic-number", "highest-point",
+    # V11 categories
+    "founding date", "founded", "established", "driving side", "left or the right",
+    "side of the road", "traffic on the left", "drive on the",
 ]
 
 

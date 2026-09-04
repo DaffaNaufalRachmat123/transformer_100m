@@ -1,5 +1,5 @@
 // =============================================================================
-// infer — CLI inference tool for the Quadrilingual 476M LLM
+// infer — CLI inference tool for the Trilingual 892M LLM
 //
 // Supports three modes:
 //   1. Chat mode (default): interactive REPL with chat format
@@ -94,6 +94,8 @@ static void print_usage(const char* prog) {
         << "  ./infer --model dpo.safetensors --config config.json --vocab vocab_6 \\\n"
         << "          --system \"Kamu adalah asisten yang membantu.\"\n";
 }
+
+static bool g_eot_marker = false;  // --eot_marker: print <<<EOT>>> after each generation
 
 static void stream_generate(
         Transformer&          model,
@@ -300,6 +302,7 @@ static void stream_generate(
     }
 
     std::cout << "\n";
+    if (g_eot_marker) std::cout << "<<<EOT>>>\n" << std::flush;
 
     // Timing
     auto t_end = std::chrono::high_resolution_clock::now();
@@ -355,6 +358,7 @@ int main(int argc, char** argv) {
         else if (key == "--show_probs_topk" && i+1 < argc) show_probs_topk = std::stoi(argv[++i]);
         else if (key == "--chat_format") chat_format = true;
         else if (key == "--stdin")    use_stdin = true;
+        else if (key == "--eot_marker") g_eot_marker = true;
     }
 
     if (show_help) { print_usage(argv[0]); return 0; }
@@ -429,7 +433,7 @@ int main(int argc, char** argv) {
 
     // ---- Mode: interactive chat REPL ---------------------------------------
     std::cerr << "============================================================\n";
-    std::cerr << "  Quadrilingual 476M LLM — Interactive Chat\n";
+    std::cerr << "  Trilingual 892M LLM — Interactive Chat\n";
     std::cerr << "  Model: " << model_path << "\n";
     if (!system_text.empty())
         std::cerr << "  System: " << system_text << "\n";

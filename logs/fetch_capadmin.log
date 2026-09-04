@@ -1,0 +1,31 @@
+[1/4] enumerating subclasses of Q10864048...
+    410 subclasses
+[2/4] fetching P36 statements...
+    subclass batch 1/7 -> 960 subjects
+    subclass batch 2/7 -> 2127 subjects
+    subclass batch 3/7 -> 2724 subjects
+    subclass batch 4/7 -> 3062 subjects
+    subclass batch 5/7 -> 3230 subjects
+    [retry 1] HTTP Error 502: Bad Gateway — waiting 3s
+    subclass batch 6/7 -> 3460 subjects
+    subclass batch 7/7 -> 3634 subjects
+[2/4] 3634 subjects with capitals
+[3/4] fetching labels for 7023 entities...
+    labels: 900/7023
+    [retry 1] HTTP Error 429: Too Many Requests — waiting 3s
+    labels: 1800/7023
+    [retry 1] The read operation timed out — waiting 3s
+    [retry 2] HTTP Error 502: Bad Gateway — waiting 5s
+    [retry 1] The read operation timed out — waiting 3s
+    labels: 2700/7023
+    labels: 3600/7023
+    labels: 4500/7023
+    labels: 5400/7023
+    [retry 1] HTTP Error 502: Bad Gateway — waiting 3s
+    [retry 2] HTTP Error 502: Bad Gateway — waiting 5s
+    [retry 1] HTTP Error 429: Too Many Requests — waiting 3s
+    labels: 6300/7023
+    labels: 7200/7023
+[4/4] fetching aliases for 6888 new entities...
+
+Done: capital_admin now 2506 rows (was 19); +15731 aliases appended

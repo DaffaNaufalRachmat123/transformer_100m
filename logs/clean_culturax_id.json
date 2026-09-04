@@ -1,0 +1,14 @@
+{
+  "input": "data/culturax_raw/culturax_id.txt",
+  "output": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_1b/indonesian/culturax_id_new.txt",
+  "stats": {
+    "in": 1141274,
+    "kept": 1025129,
+    "len": 39,
+    "spam": 62565,
+    "script": 90,
+    "url": 281,
+    "dup": 53170
+  },
+  "seconds": 721.3
+}

@@ -1,14 +1,31 @@
 #!/bin/bash
 # =============================================================================
-# build_cuda.sh — Build transformer_100m for CUDA (T4 / sm_75)
+# build_cuda.sh — Build transformer_100m_cuda for any CUDA GPU
+#
+# Arch is auto-detected from nvidia-smi compute capability; override with:
+#   CUDA_ARCH=80 bash scripts/build_cuda.sh        (A100)
+#   CUDA_ARCH=89 bash scripts/build_cuda.sh        (RTX 4090 / L40S)
+#   CUDA_ARCH=75 bash scripts/build_cuda.sh        (T4)
+#   CUDA_ARCH=90 bash scripts/build_cuda.sh        (H100)
 # =============================================================================
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# ── GPU architecture detection ─────────────────────────────────────────────
+ARCH="${CUDA_ARCH:-}"
+if [ -z "$ARCH" ]; then
+    # nvidia-smi returns e.g. "8.0", "8.9", "9.0" -> strip the dot -> "80"/"89"/"90"
+    CC=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
+    ARCH=$(echo "$CC" | tr -d '.')
+fi
+if [ -z "$ARCH" ]; then
+    echo "[WARN] cannot detect compute capability — defaulting to 80 (A100)"
+    ARCH=80
+fi
 echo "═══════════════════════════════════════════════════════"
-echo " Building transformer_100m_cuda (sm_75 / T4)"
+echo " Building transformer_100m_cuda (sm_${ARCH})"
 echo "═══════════════════════════════════════════════════════"
 
 cd "$PROJECT_DIR"
@@ -33,7 +50,7 @@ fi
 
 cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_CUDA_ARCHITECTURES=75 \
+    -DCMAKE_CUDA_ARCHITECTURES=${ARCH} \
     ${DDP_FLAG}
 
 make -j$(nproc)

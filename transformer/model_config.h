@@ -10,15 +10,16 @@
 
 struct ModelConfig {
     // -------------------------------------------------------------------------
-    // Architecture (from plan v3)
+    // Architecture (892M trilingual 1B build; also read from
+    // config_pretrain.json by infer.cpp / eval scripts)
     // -------------------------------------------------------------------------
-    uint32_t vocab_size    = 65536;  // BPE quadrilingual
-    uint32_t d_model       = 576;    // embedding dimension
-    uint32_t n_layers      = 13;     // transformer layers
-    uint32_t n_q_heads     = 9;      // query heads
-    uint32_t n_kv_heads    = 3;      // GQA: key/value heads (3x saving)
-    uint32_t d_head        = 64;     // d_model / n_q_heads = 576/9
-    uint32_t ffn_dim       = 2304;   // SwiGLU hidden dim = 4 * d_model
+    uint32_t vocab_size    = 65536;  // BPE (trilingual EN/JA/ID)
+    uint32_t d_model       = 1280;   // embedding dimension
+    uint32_t n_layers      = 34;     // transformer layers
+    uint32_t n_q_heads     = 20;     // query heads
+    uint32_t n_kv_heads    = 5;      // GQA: key/value heads (4x saving)
+    uint32_t d_head        = 64;     // d_model / n_q_heads = 1280/20
+    uint32_t ffn_dim       = 5120;   // SwiGLU hidden dim = 4 * d_model
     uint32_t max_seq_len   = 2048;   // max context window
 
     // -------------------------------------------------------------------------

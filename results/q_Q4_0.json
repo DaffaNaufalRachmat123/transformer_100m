@@ -1,0 +1,334 @@
+{
+  "model": "gguf/trilingual-204m-facts-Q4_0.gguf",
+  "backend": "gguf",
+  "sections": {
+    "FACTS EN": {
+      "n": 10,
+      "lang_ok": 10,
+      "value_ok": 4,
+      "items": [
+        {
+          "q": "What city serves as the capital of Municipality of Žiri?",
+          "gold": "The capital of Municipality of Žiri is Žiri.",
+          "pred": "The capital of Žmali is South Tarawa."
+        },
+        {
+          "q": "On what date was Saint Kitts and Nevis founded?",
+          "gold": "Saint Kitts and Nevis was founded on 27 February 1967.",
+          "pred": "The population of Saint Kitts and Nevis is about 46922."
+        },
+        {
+          "q": "I want to know which continent Bangladesh is in.",
+          "gold": "Bangladesh is in Asia.",
+          "pred": "Bangladesh is in Asia."
+        },
+        {
+          "q": "About how many people live in Togo?",
+          "gold": "The population of Togo is about 7797694.",
+          "pred": "Togo is in Africa."
+        },
+        {
+          "q": "What money is used in Tonga?",
+          "gold": "The currency of Tonga is Tongan paʻanga.",
+          "pred": "Tonga is in Oceania."
+        },
+        {
+          "q": "What is the capital of Russia?",
+          "gold": "The capital of Russia is Moscow.",
+          "pred": "In Russia, the capital of Russia is Moscow."
+        },
+        {
+          "q": "How many square kilometers is Northern Cyprus?",
+          "gold": "The area of Northern Cyprus is about 3355 square kilometers.",
+          "pred": "Northern Cyprus is in North America."
+        },
+        {
+          "q": "What is an official language of Democratic Republic of the Congo?",
+          "gold": "An official language of Democratic Republic of the Congo is French.",
+          "pred": "For Democratic Republic of the Congo, an official language is French."
+        },
+        {
+          "q": "Tell me the driving side of Serbia.",
+          "gold": "In Serbia, people drive on the right.",
+          "pred": "Serbia is in Europe."
+        },
+        {
+          "q": "Tell me the highest point of Russia.",
+          "gold": "The highest point of Russia is Mount Elbrus.",
+          "pred": "The highest point of Russia is Mount Elbrus."
+        }
+      ]
+    },
+    "FACTS JA": {
+      "n": 10,
+      "lang_ok": 10,
+      "value_ok": 3,
+      "items": [
+        {
+          "q": "アメリカ合衆国の面積をご存知ですか？",
+          "gold": "アメリカ合衆国の面積はおよそ9826675平方キロメートルです。",
+          "pred": "アメリカ合衆国の面積はおよそ9826675平方キロメートルです。"
+        },
+        {
+          "q": "アダナ州の州都はどこですか？",
+          "gold": "アダナ州の州都はアダナです。",
+          "pred": "人口はおよそ2639916人です。"
+        },
+        {
+          "q": "ハフニウムの原子番号について教えてください。",
+          "gold": "ハフニウムの原子番号は72です。",
+          "pred": "そ163です。"
+        },
+        {
+          "q": "マダガスカルで最も高い地点はどこですか？",
+          "gold": "マダガスカルで一番高い場所はマロモコトロ山です。",
+          "pred": "マダガスカルで一番高い場所はマロモコトロ山です。"
+        },
+        {
+          "q": "グレナダの首都は何ですか？",
+          "gold": "グレナダの首都はセントジョージズです。",
+          "pred": "人口はおよそ114299人です。"
+        },
+        {
+          "q": "チリの公用語について教えてください。",
+          "gold": "チリの公用語はスペイン語です。",
+          "pred": "人口はおよそ19458000人です。"
+        },
+        {
+          "q": "アルミニウムの化学記号を教えてください。",
+          "gold": "アルミニウムの化学記号はAlです。",
+          "pred": "アルミニウムの化学記号はAlです。"
+        },
+        {
+          "q": "アンゴラの通貨を答えてください。",
+          "gold": "アンゴラの通貨はクワンザです。",
+          "pred": "人口はおよそ36749906人です。"
+        },
+        {
+          "q": "南アフリカ共和国は左通行ですか、右通行ですか？",
+          "gold": "南アフリカ共和国では左通行です。",
+          "pred": "人口はおよそ62027503人です。"
+        },
+        {
+          "q": "ガーナが設立された日を教えてください。",
+          "gold": "ガーナは1957年に建国されました。",
+          "pred": "人口はおよそ32833031人です。"
+        }
+      ]
+    },
+    "TRANSLATION EN→JA": {
+      "n": 20,
+      "lang_ok": 7,
+      "avg_chrf": 0.0018438697318007662,
+      "items": [
+        {
+          "src": "- Roughly, yes.",
+          "gold": "大体そうだ",
+          "pred": "日本語に翻訳はす。"
+        },
+        {
+          "src": "The company identifies the name Mar-a-Lago as Spanish for \"Sea-to-Lake.\"[7]",
+          "gold": "マー・ア・ラゴはスペイン語であり、英語でSea to Lakeという意味である。[7]",
+          "pred": ""
+        },
+        {
+          "src": "The news of the accident was a great shock to me.",
+          "gold": "その事故のニュースは、私には大変衝撃的なものだった。",
+          "pred": ""
+        },
+        {
+          "src": "We won't become martyrizes before we bring our enemies to their kneels.",
+          "gold": "敵を倒すまで、 殉教というシャーベットを飲むこともないだろう",
+          "pred": ""
+        },
+        {
+          "src": "I can't hold your hand?",
+          "gold": "君の手を握ってはだめなの？",
+          "pred": "日本語に翻訳は日本語です。"
+        },
+        {
+          "src": "Chill out!",
+          "gold": "落ちつけよ。",
+          "pred": "日本語に翻訳は日本語です。"
+        },
+        {
+          "src": "Save them from themselves.",
+          "gold": "彼らを彼ら自身から救え",
+          "pred": "日本語に翻訳は日本語です。"
+        },
+        {
+          "src": "Service-wise, this is over and above.",
+          "gold": "契約料金の範囲を超えている",
+          "pred": ""
+        },
+        {
+          "src": "Both of us are from Tampa.",
+          "gold": "私たちは２人ともタンパの出身です。",
+          "pred": ""
+        },
+        {
+          "src": "But I can take it from here.",
+          "gold": "でも ここからそれを取れる",
+          "pred": ""
+        },
+        {
+          "src": "You two know each other?",
+          "gold": "あなたは2 _お互いを知っていますか？",
+          "pred": "日本語に翻訳は日本語です。"
+        },
+        {
+          "src": "Canada is a good place to go if it's your first experience living abroad.",
+          "gold": "海外生活初心者にとっては、カナダはいい国だと思います。",
+          "pred": ""
+        },
+        {
+          "src": "It was set up so that Mayka would be declared dead, and I'd confess.",
+          "gold": "マイカの死が確認されて",
+          "pred": ""
+        },
+        {
+          "src": "Welcome to the Channel 6 Morning News.",
+          "gold": "チャネル6 朝のニュースへようこそ",
+          "pred": "日本語に翻訳は日本語です。"
+        },
+        {
+          "src": "The only one who'd listen to us was the family cat, Cecil.",
+          "gold": "聞き手は飼いネコのセシル",
+          "pred": ""
+        },
+        {
+          "src": "104–101 BCE War of the Heavenly Horses",
+          "gold": "104–101 BCE 汗血馬戦争 (漢の大宛遠征)",
+          "pred": "日本語に翻訳は日本語です。"
+        },
+        {
+          "src": "That would have been funny.",
+          "gold": "あれば可笑しかったのに",
+          "pred": ""
+        },
+        {
+          "src": "You were dealing drugs back then, weren't you?",
+          "gold": "君は　その当時麻薬の取り引きを してたんだろう？",
+          "pred": ""
+        },
+        {
+          "src": "- You said you found something. - Several things, yeah.",
+          "gold": "- 何か見つけたようね",
+          "pred": ""
+        },
+        {
+          "src": "That's 14 days. And what's 14?",
+          "gold": "14日　14は？",
+          "pred": ""
+        }
+      ]
+    },
+    "TRANSLATION JA→EN": {
+      "n": 20,
+      "lang_ok": 11,
+      "avg_chrf": 0.05170989182338065,
+      "items": [
+        {
+          "src": "そう言ってた",
+          "gold": "I'm sure he said Iron Crusaders.",
+          "pred": "In English."
+        },
+        {
+          "src": "三婦の女房おつぎは、早速磯之丞を一緒につれて帰ってほしいと頼む。",
+          "gold": "Sabu's wife Otsugi asked her to bring Isonojo back with them immediately.",
+          "pred": "Tranrih to English is in English."
+        },
+        {
+          "src": "！ 率直に言うと　ノーとは　言えなかった",
+          "gold": "Well, frankly, I couldn't say no to him.",
+          "pred": "Tran terbi is in Asia."
+        },
+        {
+          "src": "速い方がいいな",
+          "gold": "Yeah. No, I want to go fast.",
+          "pred": "Tran terbi is in English."
+        },
+        {
+          "src": "友人の為なら何でも",
+          "gold": "Anything for a friend.",
+          "pred": "In English."
+        },
+        {
+          "src": "トムを見つけることができた？",
+          "gold": "Have you found Tom?",
+          "pred": "トムの人口はおよそ1164613人です。"
+        },
+        {
+          "src": "こんばんは、ジョン",
+          "gold": "- Evenin', John.",
+          "pred": "アブダビナウのギリシア語アブダビナウ語です。"
+        },
+        {
+          "src": "水をワインに変える男を見つけたら",
+          "gold": "They see a guy turning water into wine,",
+          "pred": ""
+        },
+        {
+          "src": "- 品質はどうだ？",
+          "gold": "Good quality, you like?",
+          "pred": "In English."
+        },
+        {
+          "src": "今晩ポリーと映画に 行くが　どう思う？",
+          "gold": "How about you, Polly and me go out to a movie tonight?",
+          "pred": "アオラルの人口はおよそ1264613人です。"
+        },
+        {
+          "src": "ええと...",
+          "gold": "Uh, Kevin...",
+          "pred": "In English."
+        },
+        {
+          "src": "- かなりポイントに。 - はい、確かに。",
+          "gold": "indeed.",
+          "pred": "Tran terbi is in Europe."
+        },
+        {
+          "src": "高揚か 浪人しては派手な言葉遣いだ",
+          "gold": "Oh, enhances. Fancy word for a sellsword.",
+          "pred": "In English."
+        },
+        {
+          "src": "お前は それを使って 銀行復帰を果たした",
+          "gold": "You used that to return to the bank.",
+          "pred": "In English., convertible is in English."
+        },
+        {
+          "src": "順番があっちこっちいっちゃったんで　もとに戻します",
+          "gold": "Let's take turns again.",
+          "pred": "カル・ウニタ・リバティ・カル・ノウム合衆国市長国民所属・cです。"
+        },
+        {
+          "src": "- 貨物列車に襲われた",
+          "gold": "- The girl played a freight train.",
+          "pred": ""
+        },
+        {
+          "src": "ボス　わかりません",
+          "gold": "I don't know, boss.",
+          "pred": "In English."
+        },
+        {
+          "src": "父は中御門経任。",
+          "gold": "His father was Tsunetada NAKAMIKADO.",
+          "pred": "Tran terbiははいにの化学記号はTlです。"
+        },
+        {
+          "src": "ああ、セリブ警部は？",
+          "gold": "You, too, Mr. Self.",
+          "pred": "ベトナム語はベトナム語です。"
+        },
+        {
+          "src": "わかりませんが　クリークは 何か隠し事をしていた",
+          "gold": "I don't know. Creek was hiding something else.",
+          "pred": "中部アフリカCFMはアフリカにあります。"
+        }
+      ]
+    }
+  }
+}

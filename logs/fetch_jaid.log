@@ -1,0 +1,21 @@
+  [tatoeba] loading jpn sentences...
+  [tatoeba]   jpn: 248876
+  [tatoeba] loading ind sentences...
+  [tatoeba]   ind: 28192
+  [tatoeba] links jpn-ind...
+  [tatoeba]   +6193 from jpn-ind
+  [tatoeba] links ind-jpn...
+  [tatoeba]   +0 from ind-jpn
+  [tatoeba] kept 6193 -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_raw/ja-id/tatoeba.tsv
+  [opus:wikimatrix] downloading https://object.pouta.csc.fi/OPUS-WikiMatrix/v1/moses/ja-id.txt.zip
+    [retry 1] HTTP Error 404: Not Found
+    [retry 2] HTTP Error 404: Not Found
+    [retry 3] HTTP Error 404: Not Found
+  [opus:wikimatrix] FAILED — skipped
+  [opus:ccmatrix] downloading https://object.pouta.csc.fi/OPUS-CCMatrix/v1/moses/ja-id.txt.zip
+    [retry 1] HTTP Error 404: Not Found
+    [retry 2] HTTP Error 404: Not Found
+    [retry 3] HTTP Error 404: Not Found
+  [opus:ccmatrix] FAILED — skipped
+
+Done fetching pair ja-id.

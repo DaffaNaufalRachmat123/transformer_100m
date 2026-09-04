@@ -1,0 +1,17 @@
+{
+  "inject_bytes": 546765600,
+  "parallel": {
+    "en_id": {
+      "docs": 800000,
+      "bytes": 64610362
+    },
+    "en_ja": {
+      "docs": 800000,
+      "bytes": 65040264
+    },
+    "ja_id": {
+      "docs": 9808,
+      "bytes": 755776
+    }
+  }
+}

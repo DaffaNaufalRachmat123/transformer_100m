@@ -1,0 +1,94 @@
+{
+  "budget_tokens": 21000000000,
+  "buckets": {
+    "english": {
+      "files": [
+        "fineweb.txt",
+        "fineweb_edu.txt",
+        "fineweb_edu_extra.txt",
+        "openwebtext.txt",
+        "wiki_en.txt"
+      ],
+      "bytes": 8839020272,
+      "est_unique_tokens": 2104528636,
+      "weight": 0.35,
+      "budget_tokens": 7350000000,
+      "epochs": 3.49,
+      "epoch_ok": true,
+      "repeat_by_design": false
+    },
+    "japanese": {
+      "files": [
+        "culturax_ja_new.txt",
+        "wiki_ja.txt"
+      ],
+      "bytes": 6318591210,
+      "est_unique_tokens": 1914724609,
+      "weight": 0.25,
+      "budget_tokens": 5250000000,
+      "epochs": 2.74,
+      "epoch_ok": true,
+      "repeat_by_design": false
+    },
+    "indonesian": {
+      "files": [
+        "culturax_id.txt",
+        "culturax_id_new.txt",
+        "mc4_id_clean.txt",
+        "wiki_id.txt"
+      ],
+      "bytes": 6823801464,
+      "est_unique_tokens": 1516400325,
+      "weight": 0.2,
+      "budget_tokens": 4200000000,
+      "epochs": 2.77,
+      "epoch_ok": true,
+      "repeat_by_design": false
+    },
+    "code": {
+      "files": [
+        "starcoder_clean.txt"
+      ],
+      "bytes": 3197818326,
+      "est_unique_tokens": 841531138,
+      "weight": 0.09,
+      "budget_tokens": 1890000000,
+      "epochs": 2.25,
+      "epoch_ok": true,
+      "repeat_by_design": false
+    },
+    "math": {
+      "files": [
+        "openwebmath.txt"
+      ],
+      "bytes": 1449043888,
+      "est_unique_tokens": 362260972,
+      "weight": 0.03,
+      "budget_tokens": 630000000,
+      "epochs": 1.74,
+      "epoch_ok": true,
+      "repeat_by_design": false
+    },
+    "mixed": {
+      "files": [
+        "facts_en.txt",
+        "facts_id.txt",
+        "facts_ja.txt",
+        "parallel_enid.txt",
+        "parallel_enja.txt",
+        "parallel_jaid.txt"
+      ],
+      "bytes": 677172002,
+      "est_unique_tokens": 161231429,
+      "weight": 0.08,
+      "budget_tokens": 1680000000,
+      "epochs": 10.42,
+      "epoch_ok": true,
+      "repeat_by_design": true
+    }
+  },
+  "errors": [],
+  "total_unique_tokens": 6900677110,
+  "overall_epochs": 3.04,
+  "verdict": "PASS"
+}

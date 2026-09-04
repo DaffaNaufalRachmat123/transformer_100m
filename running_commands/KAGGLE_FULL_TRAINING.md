@@ -2,7 +2,7 @@
 
 > **Update (2026-08-09):** DPO dihapus dari pipeline.
 > Data DPO EN↔JA yang tersedia sangat kecil & berkualitas rendah sehingga
-> *menurunkan* kualitas model (margin meledak ke -131). Untuk model 204M
+> *menurunkan* kualitas model (margin meledak ke -131). Untuk model 892M
 > yang fokus terjemahan EN↔JA, **SFT dengan data paralel bersih sudah cukup**.
 > Lihat `scripts/run_enja_pipeline.sh` untuk versi ringkas.
 

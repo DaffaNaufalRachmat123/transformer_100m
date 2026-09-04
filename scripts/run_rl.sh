@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# run_rl.sh — Launch Stage 5 (RL / GRPO-lite) on the 204M model.
+# run_rl.sh — Launch Stage 5 (RL / GRPO-lite) on the 892M model.
 #
 # Requires:
 #   - A SFT checkpoint as the policy base (--base_model) and the reference

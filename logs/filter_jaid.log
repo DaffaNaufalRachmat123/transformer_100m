@@ -1,0 +1,6 @@
+Warning : `load_model` does not return WordVectorModel or SupervisedModel any more, but a `FastText` object which is very similar.
+LID model loaded: /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/lid.176.bin
+[tatoeba] in=6193 junk=0 lid_rej=601 num_rej=16 ratio_rej=672 dup=0 kept=4904
+
+Done: 4904 clean ja-id pairs -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/parallel_ja_id.tsv
+  by source: {'tatoeba': 4904}

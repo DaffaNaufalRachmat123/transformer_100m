@@ -4,7 +4,7 @@
 #
 #  DPO is intentionally SKIPPED: the EN<->JA DPO preference data is tiny and
 #  low-quality, so it hurt the model more than it helped (margin exploded).
-#  For a 204M translation-focused model, SFT with clean parallel data is the
+#  For a 892M translation-focused model, SFT with clean parallel data is the
 #  right call.
 #
 #  Manual steps BEFORE running (CRITICAL):
