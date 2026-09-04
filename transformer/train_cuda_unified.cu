@@ -40,6 +40,8 @@
 #include "cuda/cuda_kernels.cuh"
 #include "cuda/cuda_monitor.h"
 #include "bpe/bpe_tokenizer.h"
+#include "transformer/model_config.h"
+#include "transformer/arch_runtime.h"
 #include "transformer/safetensors.h"
 #include "transformer/train_step.cuh"
 #include "cuda/ce_embed_kernels.cuh"
@@ -51,15 +53,33 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
-// ─── Architecture constants (892M model — matches pretrain) ───────────────
-static constexpr int D_MODEL    = 1280;
-static constexpr int N_LAYERS   = 34;
-static constexpr int N_Q_HEADS  = 20;
-static constexpr int N_KV_HEADS = 5;
-static constexpr int D_HEAD     = 64;
-static constexpr int FFN_DIM    = 5120;
-static constexpr int MODEL_VOCAB = 65536;
-static constexpr float ROPE_THETA = 500000.0f;
+// ─── Architecture (runtime-configurable via --arch_config) ────────────────
+// Defaults = 892M, matching the pretrain trainer. Must match the checkpoint
+// passed as --base_model, otherwise tensor shapes will not line up on load.
+static ModelConfig g_arch;              // defaults live in model_config.h
+static std::string g_arch_config = "";  // empty = keep defaults
+
+static int   D_MODEL     = 1280;
+static int   N_LAYERS    = 34;
+static int   N_Q_HEADS   = 20;
+static int   N_KV_HEADS  = 5;
+static int   D_HEAD      = 64;
+static int   FFN_DIM     = 5120;
+static int   MODEL_VOCAB = 65536;
+static int   MAX_SEQ_LEN = 2048;
+static float ROPE_THETA  = 500000.0f;
+
+static void sync_arch() {
+    D_MODEL     = (int)g_arch.d_model;
+    N_LAYERS    = (int)g_arch.n_layers;
+    N_Q_HEADS   = (int)g_arch.n_q_heads;
+    N_KV_HEADS  = (int)g_arch.n_kv_heads;
+    D_HEAD      = (int)g_arch.d_head;
+    FFN_DIM     = (int)g_arch.ffn_dim;
+    MODEL_VOCAB = (int)g_arch.vocab_size;
+    MAX_SEQ_LEN = (int)g_arch.max_seq_len;
+    ROPE_THETA  = g_arch.rope_theta;
+}
 
 // ─── CLI config ────────────────────────────────────────────────────────────
 static int g_stage                     = 2;
@@ -663,6 +683,7 @@ int main(int argc, char** argv) {
         else if (arg == "--dpo_dir" && i+1 < argc)   g_dpo_dir = argv[++i];
         else if (arg == "--phone_dir" && i+1 < argc) g_phone_dir = argv[++i];
         else if (arg == "--checkpoint_dir" && i+1 < argc) g_checkpoint_dir = argv[++i];
+        else if (arg == "--arch_config" && i+1 < argc) g_arch_config = argv[++i];
         else if (arg == "--base_model" && i+1 < argc) g_base_model = argv[++i];
         else if (arg == "--ref_model" && i+1 < argc) g_ref_model = argv[++i];
         else if (arg == "--vocab_dir" && i+1 < argc) g_vocab_dir = argv[++i];
@@ -699,6 +720,7 @@ int main(int argc, char** argv) {
             printf("  --stage 3          DPO (Direct Preference Optimization)\n");
             printf("  --stage 4          Phone Adapter\n");
             printf("  --stage 5          RL (GRPO-lite, rule-based verifier)\n");
+            printf("  --arch_config      Architecture JSON [built-in 892M]\n");
             printf("  --base_model       Pretrained model checkpoint\n");
             printf("  --sft_dir          SFT data directory\n");
             printf("  --dpo_dir          DPO data directory\n");
@@ -725,6 +747,17 @@ int main(int argc, char** argv) {
     }
 
     // ─── Init CUDA (DDP: fork BEFORE any CUDA call) ─────────────────────────
+    // Architecture must be resolved before any tensor is sized.
+    if (!g_arch_config.empty() && !arch::load(g_arch_config, g_arch)) return 1;
+    sync_arch();
+
+    // RoPE tables are cut to MAX_SEQ_LEN; a longer --max_seq would index past them.
+    if (g_max_seq > MAX_SEQ_LEN) {
+        fprintf(stderr, "[ERR] --max_seq %d exceeds max_seq_len %d in the arch config\n",
+                g_max_seq, MAX_SEQ_LEN);
+        return 1;
+    }
+
 #ifdef USE_DDP
     int ddp_device = 0;
     if (g_use_ddp) {
@@ -748,8 +781,9 @@ int main(int argc, char** argv) {
 #endif
 
     const char* stage_names[] = {"", "", "SFT", "DPO", "Phone", "RL"};
-    printf("\n[Stage %d: %s] 892M model | FP16 | batch=%d | seq=%d | lr=%.1e%s\n",
-           g_stage, stage_names[g_stage], g_batch_size, g_max_seq, g_lr,
+    printf("\n[Stage %d: %s] %.1fM model | FP16 | batch=%d | seq=%d | lr=%.1e%s\n",
+           g_stage, stage_names[g_stage], g_arch.param_count() / 1e6,
+           g_batch_size, g_max_seq, g_lr,
            g_use_ddp ? " | DDP x2" : "");
 
     // Load tokenizer
@@ -863,8 +897,9 @@ int main(int argc, char** argv) {
     float *rope_cos = nullptr, *rope_sin = nullptr;
     {
         int half_dim = D_HEAD / 2;
-        std::vector<float> cos_h(2048 * half_dim), sin_h(2048 * half_dim);
-        for (int pos = 0; pos < 2048; pos++)
+        std::vector<float> cos_h((size_t)MAX_SEQ_LEN * half_dim),
+                           sin_h((size_t)MAX_SEQ_LEN * half_dim);
+        for (int pos = 0; pos < MAX_SEQ_LEN; pos++)
             for (int j = 0; j < half_dim; j++) {
                 float freq = pos / powf(ROPE_THETA, 2.0f * j / D_HEAD);
                 cos_h[pos * half_dim + j] = cosf(freq);

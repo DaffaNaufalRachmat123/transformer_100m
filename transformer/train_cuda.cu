@@ -36,6 +36,7 @@
 #include "cuda/cuda_autograd.h"
 #include "bpe/bpe_tokenizer.h"
 #include "transformer/model_config.h"
+#include "transformer/arch_runtime.h"
 #include "transformer/pretrain_dataset.h"
 #include "transformer/safetensors.h"
 #include "transformer/train_step.cuh"
@@ -48,18 +49,35 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
-// ─── Architecture constants (892M model — trilingual 1B build) ────────────
-// D=1280, L=34, GQA 20Q:5KV (d_head 64), SwiGLU FFN 4x.
+// ─── Architecture (runtime-configurable via --arch_config) ────────────────
+// Defaults = 892M: D=1280, L=34, GQA 20Q:5KV (d_head 64), SwiGLU FFN 4x.
 // Params: embed 83.9M (tied) + 34 layers x 23.77M + final norm ≈ 892M.
-// Kernels are dimension-agnostic (grad_check passed D=64..3072).
-static constexpr int D_MODEL    = 1280;
-static constexpr int N_LAYERS   = 34;
-static constexpr int N_Q_HEADS  = 20;
-static constexpr int N_KV_HEADS = 5;
-static constexpr int D_HEAD     = D_MODEL / N_Q_HEADS;  // 64
-static constexpr int FFN_DIM    = 5120;
-static constexpr int MODEL_VOCAB = 65536;
-static constexpr float ROPE_THETA = 500000.0f;
+// Kernels are dimension-agnostic (grad_check passed D=64..3072), so these are
+// plain mutable globals refreshed from JSON before any allocation happens.
+static ModelConfig g_arch;              // defaults live in model_config.h
+static std::string g_arch_config = "";  // empty = keep defaults
+
+static int   D_MODEL     = 1280;
+static int   N_LAYERS    = 34;
+static int   N_Q_HEADS   = 20;
+static int   N_KV_HEADS  = 5;
+static int   D_HEAD      = 64;
+static int   FFN_DIM     = 5120;
+static int   MODEL_VOCAB = 65536;
+static int   MAX_SEQ_LEN = 2048;
+static float ROPE_THETA  = 500000.0f;
+
+static void sync_arch() {
+    D_MODEL     = (int)g_arch.d_model;
+    N_LAYERS    = (int)g_arch.n_layers;
+    N_Q_HEADS   = (int)g_arch.n_q_heads;
+    N_KV_HEADS  = (int)g_arch.n_kv_heads;
+    D_HEAD      = (int)g_arch.d_head;
+    FFN_DIM     = (int)g_arch.ffn_dim;
+    MODEL_VOCAB = (int)g_arch.vocab_size;
+    MAX_SEQ_LEN = (int)g_arch.max_seq_len;
+    ROPE_THETA  = g_arch.rope_theta;
+}
 
 // ─── CLI config ────────────────────────────────────────────────────────────
 static std::string g_data_dir       = "data/corpus_final";
@@ -311,12 +329,12 @@ void run_eval(const std::string& ckpt_dir,
         cf << "  \"n_kv_heads\": " << N_KV_HEADS << ",\n";
         cf << "  \"d_head\": " << D_HEAD << ",\n";
         cf << "  \"ffn_dim\": " << FFN_DIM << ",\n";
-        cf << "  \"max_seq_len\": 2048,\n";
-        cf << "  \"rope_theta\": 500000.0,\n";
+        cf << "  \"max_seq_len\": " << MAX_SEQ_LEN << ",\n";
+        cf << "  \"rope_theta\": " << ROPE_THETA << ",\n";
         cf << "  \"weight_tying\": true,\n";
-        cf << "  \"pad_token_id\": 15,\n";
-        cf << "  \"eos_token_id\": 4,\n";
-        cf << "  \"bos_token_id\": 0\n";
+        cf << "  \"pad_token_id\": " << g_arch.pad_token_id << ",\n";
+        cf << "  \"eos_token_id\": " << g_arch.eos_token_id << ",\n";
+        cf << "  \"bos_token_id\": " << g_arch.bos_token_id << "\n";
         cf << "}\n";
         cf.close();
     }
@@ -703,6 +721,7 @@ int main(int argc, char** argv) {
         std::string arg = argv[i];
         if (arg == "--data_dir" && i+1 < argc)       g_data_dir = argv[++i];
         else if (arg == "--checkpoint_dir" && i+1 < argc) g_checkpoint_dir = argv[++i];
+        else if (arg == "--arch_config" && i+1 < argc) g_arch_config = argv[++i];
         else if (arg == "--vocab_dir" && i+1 < argc)  g_vocab_dir = argv[++i];
         else if (arg == "--bpe" && i+1 < argc)        g_bpe_path = argv[++i];
         else if (arg == "--max_tokens" && i+1 < argc) g_max_tokens = std::stoull(argv[++i]);
@@ -733,6 +752,7 @@ int main(int argc, char** argv) {
             printf("Usage: train_pretrain_cuda [options]\n");
             printf("  --data_dir <path>         Corpus directory [data/corpus_final]\n");
             printf("  --checkpoint_dir <path>   Checkpoint output [checkpoints]\n");
+            printf("  --arch_config <path>      Architecture JSON [built-in 892M]\n");
             printf("  --vocab_dir <path>        Vocab directory [vocab_6]\n");
             printf("  --bpe <path>              BPE binary model path (optional)\n");
             printf("  --max_tokens <N>          Token budget [9B]\n");
@@ -756,6 +776,17 @@ int main(int argc, char** argv) {
     }
 
     // ─── Init CUDA ─────────────────────────────────────────────────────────
+    // Architecture must be resolved before any tensor is sized.
+    if (!g_arch_config.empty() && !arch::load(g_arch_config, g_arch)) return 1;
+    sync_arch();
+
+    // RoPE tables are cut to MAX_SEQ_LEN; a longer --max_seq would index past them.
+    if (g_max_seq > MAX_SEQ_LEN) {
+        fprintf(stderr, "[ERR] --max_seq %d exceeds max_seq_len %d in the arch config\n",
+                g_max_seq, MAX_SEQ_LEN);
+        return 1;
+    }
+
     // Auto-detect GPU count if not specified
     if (g_use_ddp && g_num_gpus == 0) {
         cudaGetDeviceCount(&g_num_gpus);
@@ -794,9 +825,11 @@ int main(int argc, char** argv) {
 #endif
 
     printf("\n╔══════════════════════════════════════════════════════════╗\n");
-    printf("║  100M Transformer — CUDA Pre-training (sm_75 / T4)      ║\n");
+    printf("║  Transformer — CUDA Pre-training (sm_75 / T4)           ║\n");
     printf("║  D=%d L=%d QH=%d KVH=%d DH=%d FFN=%d V=%d        ║\n",
            D_MODEL, N_LAYERS, N_Q_HEADS, N_KV_HEADS, D_HEAD, FFN_DIM, MODEL_VOCAB);
+    printf("║  Params: %.1fM                                           ║\n",
+           g_arch.param_count() / 1e6);
     printf("║  GPU: %s | FP16 Mixed Precision | AdamW       ║\n",
            g_use_ddp ? "T4 x2 (DDP)" : "Single T4   ");
     printf("║  Tokens: %-10s | Batch: %-3d | Seq: %-4d            ║\n",
@@ -1094,8 +1127,8 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
 
     // ─── Pre-compute RoPE tables ────────────────────────────────────────────
     RoPETables rope;
-    rope.init(2048, D_HEAD, ROPE_THETA);
-    printf("[RoPE] Tables pre-computed (max_seq=2048, d_head=%d)\n", D_HEAD);
+    rope.init(MAX_SEQ_LEN, D_HEAD, ROPE_THETA);
+    printf("[RoPE] Tables pre-computed (max_seq=%d, d_head=%d)\n", MAX_SEQ_LEN, D_HEAD);
 
     // ─── Init dataset ──────────────────────────────────────────────────────
     PretrainDatasetConfig ds_cfg;
