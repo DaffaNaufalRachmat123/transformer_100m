@@ -1,12 +1,13 @@
 // =============================================================================
-// train_cuda_unified.cu — SFT / DPO / Phone Training (CUDA, 892M Model)
+// train_cuda_unified.cu — SFT / DPO / Phone Training (CUDA)
 //
 // Single binary, stage selected via --stage flag:
 //   --stage 2  = SFT (Supervised Fine-Tuning)
 //   --stage 3  = DPO (Direct Preference Optimization)
 //   --stage 4  = Phone Adapter
 //
-// Architecture: 892M (D=1280, L=34, QH=20, KVH=5, DH=64, FFN=5120)
+// Architecture: runtime-selected via --arch_config (default 492M EN/JA:
+// D=1280, L=24, QH=20, KVH=5, DH=64, FFN=3584, vocab 49152)
 // Target: Kaggle T4 x2 (sm_75, FP16)
 //
 // This file uses the SAME correct forward/backward as pretraining:
@@ -54,18 +55,20 @@ namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
 // ─── Architecture (runtime-configurable via --arch_config) ────────────────
-// Defaults = 892M, matching the pretrain trainer. Must match the checkpoint
-// passed as --base_model, otherwise tensor shapes will not line up on load.
-static ModelConfig g_arch;              // defaults live in model_config.h
+// Defaults = 492M EN/JA, matching the pretrain trainer. Must match the
+// checkpoint passed as --base_model, otherwise tensor shapes will not line up.
+// The literals below are placeholders; sync_arch() always overwrites them from
+// g_arch, whose real defaults live in transformer/model_config.h.
+static ModelConfig g_arch;
 static std::string g_arch_config = "";  // empty = keep defaults
 
 static int   D_MODEL     = 1280;
-static int   N_LAYERS    = 34;
+static int   N_LAYERS    = 24;
 static int   N_Q_HEADS   = 20;
 static int   N_KV_HEADS  = 5;
 static int   D_HEAD      = 64;
-static int   FFN_DIM     = 5120;
-static int   MODEL_VOCAB = 65536;
+static int   FFN_DIM     = 3584;
+static int   MODEL_VOCAB = 49152;
 static int   MAX_SEQ_LEN = 2048;
 static float ROPE_THETA  = 500000.0f;
 
@@ -720,7 +723,7 @@ int main(int argc, char** argv) {
             printf("  --stage 3          DPO (Direct Preference Optimization)\n");
             printf("  --stage 4          Phone Adapter\n");
             printf("  --stage 5          RL (GRPO-lite, rule-based verifier)\n");
-            printf("  --arch_config      Architecture JSON [built-in 892M]\n");
+            printf("  --arch_config      Architecture JSON [built-in 492M]\n");
             printf("  --base_model       Pretrained model checkpoint\n");
             printf("  --sft_dir          SFT data directory\n");
             printf("  --dpo_dir          DPO data directory\n");

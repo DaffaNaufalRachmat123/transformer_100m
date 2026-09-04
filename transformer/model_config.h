@@ -10,23 +10,25 @@
 
 struct ModelConfig {
     // -------------------------------------------------------------------------
-    // Architecture (892M trilingual 1B build; also read from
-    // config_pretrain.json by infer.cpp / eval scripts)
+    // Architecture — 492M EN/JA ("S3"). Override at runtime with --arch_config.
+    // Compute-optimal for a ~4.4e19 FLOP budget (~300h on a rented RTX 4090),
+    // which buys ~11B tokens at ~23 tokens/param. Sizing larger without also
+    // raising the token budget makes the model worse, not better.
     // -------------------------------------------------------------------------
-    uint32_t vocab_size    = 65536;  // BPE (trilingual EN/JA/ID)
+    uint32_t vocab_size    = 49152;  // BPE (EN/JA/code; ID+KO merges dropped)
     uint32_t d_model       = 1280;   // embedding dimension
-    uint32_t n_layers      = 34;     // transformer layers
+    uint32_t n_layers      = 24;     // transformer layers
     uint32_t n_q_heads     = 20;     // query heads
-    uint32_t n_kv_heads    = 5;      // GQA: key/value heads (4x saving)
+    uint32_t n_kv_heads    = 5;      // GQA: key/value heads (4x KV-cache saving)
     uint32_t d_head        = 64;     // d_model / n_q_heads = 1280/20
-    uint32_t ffn_dim       = 5120;   // SwiGLU hidden dim = 4 * d_model
+    uint32_t ffn_dim       = 3584;   // SwiGLU hidden dim = 2.8 * d_model
     uint32_t max_seq_len   = 2048;   // max context window
 
     // -------------------------------------------------------------------------
     // Derived dimensions (auto-computed)
     // -------------------------------------------------------------------------
-    uint32_t kv_dim() const { return n_kv_heads * d_head; }   // 3*64 = 192
-    uint32_t q_dim()  const { return n_q_heads  * d_head; }   // 9*64 = 576
+    uint32_t kv_dim() const { return n_kv_heads * d_head; }   // 5*64 = 320
+    uint32_t q_dim()  const { return n_q_heads  * d_head; }   // 20*64 = 1280
 
     // -------------------------------------------------------------------------
     // RoPE configuration

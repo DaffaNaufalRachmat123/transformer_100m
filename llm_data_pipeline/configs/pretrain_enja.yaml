@@ -1,0 +1,402 @@
+# Pre-training data pipeline — 492M EN/JA model (facts + EN<->JA translation + Python)
+#
+# Differences from configs/pretrain.yaml (the 650M quadrilingual config this was
+# derived from):
+#   * EN/JA only. Indonesian and Korean sources removed, not just disabled.
+#   * 12B token target instead of 100B — matches what ~300 GPU-hours can actually
+#     train at 492M (~23 tokens/param). A larger corpus would go unused.
+#   * Deduplication, filtering and contamination detection are ENABLED. They ship
+#     disabled upstream, which is how a corpus reaches training with duplicates.
+#   * Language-ID thresholds raised and a hard purity gate added: the source
+#     project's inspection_report.json shows its Indonesian files were 100%
+#     English and wiki_ko.txt 100% English. Filenames were trusted; they lied.
+#   * Code re-enabled (Python-weighted) because RLHF-for-Python is a target task.
+
+pipeline:
+  name: pretrain_enja_492m
+  seed: 42
+  data_root: data/raw
+  output_root: data/corpus_enja
+  num_workers: 16
+  batch_size: 10000
+  smoke_test: false
+  smoke_test_docs: 1000
+
+# ---------------------------------------------------------------------------
+# A.1 — Data Acquisition
+# ---------------------------------------------------------------------------
+acquisition:
+  output_dir: data/raw/acquisition
+  sources:
+    # ---- English (target ~5.4B after cleaning) ----
+    fineweb_edu:
+      enabled: true
+      dataset: HuggingFaceFW/fineweb-edu
+      subset: sample-10BT
+      target_tokens: 4000000000
+      languages: [en]
+    dclm_baseline:
+      enabled: true
+      dataset: mlfoundations/dclm-baseline-1.0
+      target_tokens: 1500000000
+      languages: [en]
+    wikipedia_en:
+      enabled: true
+      dataset: wikimedia/wikipedia
+      subset: 20231101.en
+      target_tokens: 1000000000
+      languages: [en]
+
+    # ---- Japanese (target ~4.2B) ----
+    # CulturaX ja holds ~74B tokens; the current 204M run used only 629M of it.
+    culturax_ja:
+      enabled: true
+      dataset: uonlp/CulturaX
+      subset: ja
+      target_tokens: 3000000000
+      languages: [ja]
+    cc100_ja:
+      enabled: true
+      dataset: cc100
+      subset: ja
+      target_tokens: 1200000000
+      languages: [ja]
+    wikipedia_ja:
+      enabled: true
+      dataset: wikimedia/wikipedia
+      subset: 20231101.ja
+      target_tokens: 800000000
+      languages: [ja]
+    aozora_ja:
+      enabled: true
+      target_tokens: 300000000
+      languages: [ja]
+
+    # ---- Code (Python-weighted; RL target task) ----
+    the_stack_v2:
+      enabled: true
+      dataset: bigcode/the-stack-v2-dedup
+      languages: [python, javascript, typescript, java, go, rust]
+      language_weights: {python: 0.6, javascript: 0.1, typescript: 0.1,
+                         java: 0.1, go: 0.05, rust: 0.05}
+      target_tokens: 1500000000
+
+    # ---- Math ----
+    openwebmath:
+      enabled: true
+      dataset: open-web-math/open-web-math
+      target_tokens: 400000000
+    metamath:
+      enabled: true
+      dataset: meta-math/MetaMathQA
+      target_tokens: 150000000
+
+    # ---- Parallel EN<->JA (the single biggest translation lever) ----
+    # JParaCrawl v3 is ~25M sentence pairs and is currently unused entirely.
+    jparacrawl:
+      enabled: true
+      url: https://www.kecl.ntt.co.jp/icl/lirg/jparacrawl/
+      target_tokens: 400000000
+      languages: [en, ja]
+    wikimatrix_enja:
+      enabled: true
+      dataset: wikimatrix
+      pair: en-ja
+      target_tokens: 100000000
+      languages: [en, ja]
+    opus100_enja:
+      enabled: true
+      dataset: Helsinki-NLP/opus-100
+      subset: en-ja
+      target_tokens: 50000000
+      languages: [en, ja]
+
+  provenance:
+    enabled: true
+    log_file: data/raw/provenance.db
+
+# ---------------------------------------------------------------------------
+# A.2 — File Validation
+# ---------------------------------------------------------------------------
+validation:
+  encoding: utf-8
+  reject_non_utf8: true
+  encoding_fallback: [chardet]
+  bom_strip: true
+  checksum_algorithm: blake3
+  mime_validation: true
+  truncation_detection: true
+  quarantine_dir: data/raw/quarantine
+  min_file_size_bytes: 100
+  remove_empty: true
+
+# ---------------------------------------------------------------------------
+# A.3 — Text Extraction & Normalization
+# ---------------------------------------------------------------------------
+extraction:
+  primary_extractor: trafilatura
+  fallback_chain: [readability_lxml, jusText, beautifulsoup]
+  format_parsers:
+    pdf: pdfminer
+    latex: pylatexenc
+    markdown: internal
+    code: raw
+  normalization:
+    unicode_form: NFC
+    ftfy_enabled: true
+    collapse_whitespace: true
+    line_ending: "\n"
+    remove_zero_width: true
+    remove_control_chars: true
+    preserve_math: true
+    preserve_code_blocks: true
+    preserve_tables: true
+
+# ---------------------------------------------------------------------------
+# A.4 — Language Identification  (HARD GATE — see header note)
+# ---------------------------------------------------------------------------
+language_id:
+  primary_model: lid.176.bin
+  primary_type: fasttext
+  primary_threshold: 0.80          # raised from 0.65
+  secondary_model: cld3
+  secondary_threshold: 0.60
+  paragraph_level: true
+  target_languages: [en, ja]
+  mixed_language_handling: keep_if_primary_target
+  script_routing:
+    cjk: [ja]
+  purity_gate:
+    enabled: true
+    min_purity: 0.95               # per output file
+    on_failure: abort              # never silently train on mislabelled data
+    report_file: logs/lid_purity_enja.json
+
+# ---------------------------------------------------------------------------
+# A.5 — Content Cleaning
+# ---------------------------------------------------------------------------
+cleaning:
+  web_artifact_removal:
+    enabled: true
+    remove_html_tags: true
+    remove_css: true
+    remove_javascript: true
+    remove_navigation: true
+    remove_footer: true
+    remove_header: true
+    remove_cookie_banners: true
+    remove_ads: true
+    remove_social_widgets: true
+    remove_tracking: true
+    remove_comments: false
+  text_repair:
+    ftfy_enabled: true
+    emoji_normalize: true
+    url_normalize: true
+    email_normalize: true
+    phone_normalize: true
+    excessive_punctuation: true
+    excessive_whitespace: true
+  boilerplate_detection:
+    main_content_ratio_threshold: 0.3
+    trafilatura_prefer_content: true
+
+# ---------------------------------------------------------------------------
+# A.6 — Quality Scoring
+# ---------------------------------------------------------------------------
+quality_scoring:
+  heuristic:
+    perplexity:
+      enabled: true
+      model_type: kenlm
+      model_dir: models/kenlm
+      ngram_order: 5
+      threshold: 10000
+      per_language: true
+    readability:
+      enabled: true
+      en_metric: flesch_kincaid
+      non_en_metric: adapted
+    compression_ratio:
+      enabled: true
+      min_ratio: 2.0
+      max_ratio: 10.0
+    entropy:
+      enabled: true
+      min_entropy: 3.0
+      max_entropy: 6.0
+  model_based:
+    enabled: true
+    model_type: fasttext
+    training_samples: 500000
+    positive_class: [wikipedia, textbooks, curated]
+    negative_class: [random_cc_sample]
+    threshold: 0.5
+  educational:
+    enabled: false                 # needs a llama-3-70b annotator we do not have
+  composite:
+    weights:
+      model_quality: 0.45
+      perplexity_inverse: 0.25
+      readability: 0.15
+      info_density: 0.15
+    min_final_score: 0.3
+
+# ---------------------------------------------------------------------------
+# A.7 — Safety Filtering
+# ---------------------------------------------------------------------------
+safety:
+  pii_detection: {enabled: true, action: redact}
+  secrets_detection: {enabled: true, action: drop}
+  toxic_detection: {enabled: false}
+  copyright_check: {enabled: false}
+  csam_matching: {enabled: false}
+
+# ---------------------------------------------------------------------------
+# A.8 — Deduplication  (ENABLED — ships off upstream)
+# ---------------------------------------------------------------------------
+deduplication:
+  exact:
+    enabled: true
+    hash: sha256
+  minhash:
+    enabled: true
+    num_perm: 128
+    threshold: 0.8
+    shingle_size: 5
+  suffix_array:
+    enabled: false                 # O(n log n) RAM; revisit if corpus grows
+  paragraph:
+    enabled: true
+    min_paragraph_chars: 200
+
+# ---------------------------------------------------------------------------
+# A.9 — Benchmark Contamination Detection
+# ---------------------------------------------------------------------------
+contamination:
+  benchmarks: [mmlu, arc_easy, arc_challenge, hellaswag, winogrande,
+               gsm8k, humaneval, mbpp, truthfulqa, bbh, math]
+  detection:
+    ngram_size: 13
+    ngram_method: exact
+    embedding_method: cosine
+    embedding_model: all-MiniLM-L6-v2
+    embedding_threshold: 0.95
+  action: quarantine
+  quarantine_dir: data/raw/contaminated
+  report_file: logs/contamination_enja.json
+
+# ---------------------------------------------------------------------------
+# A.10 — Document Filtering  (ENABLED)
+# ---------------------------------------------------------------------------
+filtering:
+  enabled: true
+  length:
+    min_tokens: 50
+    max_tokens: 100000
+  repetition:
+    line_dup_max: 0.3
+    paragraph_dup_max: 0.2
+    ngram_max_repeat: 10
+    ngram_size: 10
+    char_max_ratio: 0.2
+  composition:
+    alpha_min_ratio: 0.6
+    numeric_max_ratio: 0.2
+    symbol_max_ratio: 0.1
+    non_printable_max: 0.01
+    mean_word_length_min: 3
+    mean_word_length_max: 15
+  # Latin-script thresholds reject valid Japanese, which has no spaces and a
+  # low alpha ratio under ASCII assumptions.
+  per_language_overrides:
+    ja:
+      composition:
+        alpha_min_ratio: 0.3
+        mean_word_length_min: 1
+        mean_word_length_max: 60
+
+# ---------------------------------------------------------------------------
+# A.11 — Data Mixing
+# ---------------------------------------------------------------------------
+mixing:
+  target_tokens: 12000000000            # 12B — see header note
+  language_proportions:
+    en: 0.45
+    ja: 0.35
+    code: 0.12
+    math: 0.04
+    parallel: 0.04
+  domain_proportions:
+    web_text: 0.55
+    wikipedia: 0.14
+    code: 0.12
+    books: 0.06
+    math: 0.04
+    parallel: 0.04
+    science: 0.05
+  upsampling:
+    parallel: 3.0
+    wikipedia: 2.0
+    code: 1.5
+  max_epochs: 3                         # >4 epochs stops behaving like new data
+  freshness_weight: 1.5
+  curriculum:
+    phase_1: {pct: 0.50, seq_len: 256,  difficulty: easier}
+    phase_2: {pct: 0.25, seq_len: 512,  difficulty: full}
+    phase_3: {pct: 0.15, seq_len: 1024, difficulty: quality}
+    phase_4: {pct: 0.10, seq_len: 2048, difficulty: quality}
+
+# ---------------------------------------------------------------------------
+# A.13 — Tokenization
+# ---------------------------------------------------------------------------
+tokenization:
+  vocab_dir: vocab_7                    # 49152 EN/JA/code BPE
+  bpe_binary: bpe_v7.bin
+  bos_id: 0
+  eos_id: 4
+  pad_id: 15
+  max_seq_len: 2048
+  packing_algorithm: first_fit_decreasing
+  packing_efficiency_target: 0.995
+  document_boundary_marker: true
+  attention_mask_format: document_id
+
+# ---------------------------------------------------------------------------
+# A.14 — Output
+# ---------------------------------------------------------------------------
+binary_dataset:
+  # The CUDA trainer streams plain .txt corpus dirs, so emit text and keep the
+  # binary shard path off by default.
+  enabled: false
+  shard_size_mb: 512
+  format: numpy_binary
+  mmap_enabled: true
+  index_enabled: true
+  version_prefix: pretrain_enja_v1
+
+text_output:
+  enabled: true
+  root: data/corpus_enja
+  layout:
+    en: english
+    ja: japanese
+    code: code
+    math: math
+    parallel: mixed
+
+provenance:
+  enabled: true
+  store: sqlite
+  db_path: data/provenance.db
+  track_all_filters: true
+
+monitoring:
+  enabled: true
+  log_dir: logs
+  track_throughput: true
+  track_rejection_rates: true
+  track_score_distributions: true
+  drift_detection:
+    enabled: true
+    kl_threshold: 0.1

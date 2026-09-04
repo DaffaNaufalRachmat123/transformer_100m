@@ -15,3 +15,5 @@ gdrive_token.json
 client_secret_*.json
 .venv/
 gguf/
+llm_data_pipeline/language_id/lid.176.bin
+llm_data_pipeline/**/__pycache__/

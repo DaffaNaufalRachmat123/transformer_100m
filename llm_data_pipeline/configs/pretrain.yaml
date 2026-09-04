@@ -1,0 +1,440 @@
+# Pre-Training Data Pipeline Configuration
+# transformer_1b_multimodal (1.04B parameters, 3-language + Math: EN/ID/JA/KO, no Code)
+
+pipeline:
+  name: pretrain_1b_v1
+  seed: 42
+  data_root: data/raw
+  output_root: data/corpus_final
+  num_workers: 16
+  batch_size: 10000
+  smoke_test: false
+  smoke_test_docs: 1000
+
+# ---------------------------------------------------------------------------
+# A.1 — Data Acquisition
+# ---------------------------------------------------------------------------
+acquisition:
+  output_dir: data/raw/acquisition
+  sources:
+    # English
+    fineweb_edu:
+      enabled: true
+      dataset: HuggingFaceFW/fineweb-edu
+      subset: sample-10BT
+      target_tokens: 18000000000       # 18B
+      languages: [en]
+    dclm_baseline:
+      enabled: true
+      dataset: mlfoundations/dclm-baseline-1.0
+      target_tokens: 5000000000        # 5B
+    wikipedia_en:
+      enabled: true
+      languages: [en]
+      date: "20240501"
+      target_tokens: 3000000000        # 3B (papers + wiki)
+    scientific:
+      enabled: true
+      sources: [arxiv, pubmed_oa]
+      target_tokens: 2000000000        # 2B
+    
+    # Indonesian (MASSIVE INCREASE)
+    cc100_id:
+      enabled: true
+      dataset: cc100
+      languages: [id]
+      target_tokens: 5000000000        # 5B
+    oscar_id:
+      enabled: true
+      dataset: oscar-corpus/OSCAR-2301
+      languages: [id]
+      target_tokens: 5000000000        # 5B
+    wikipedia_id:
+      enabled: true
+      languages: [id]
+      date: "20240501"
+      target_tokens: 2000000000        # 2B
+    sealang_id:
+      enabled: true
+      target_tokens: 4000000000        # 4B (news, legal, govt)
+      languages: [id]
+    
+    # Japanese
+    mc4_ja:
+      enabled: true
+      dataset: mc4
+      languages: [ja]
+      target_tokens: 8000000000        # 8B
+    cc100_ja:
+      enabled: true
+      dataset: cc100
+      languages: [ja]
+      target_tokens: 4000000000        # 4B
+    wikipedia_ja:
+      enabled: true
+      languages: [ja]
+      date: "20240501"
+      target_tokens: 2000000000        # 2B
+    aozora_ja:
+      enabled: true
+      target_tokens: 2000000000        # 2B literary
+      languages: [ja]
+    
+    # Korean
+    culturax_ko:
+      enabled: true
+      dataset: uonlp/CulturaX
+      languages: [ko]
+      target_tokens: 8000000000        # 8B
+    mc4_ko:
+      enabled: true
+      dataset: mc4
+      languages: [ko]
+      target_tokens: 4000000000        # 4B
+    wikipedia_ko:
+      enabled: true
+      languages: [ko]
+      date: "20240501"
+      target_tokens: 2000000000        # 2B
+    korean_books:
+      enabled: true
+      target_tokens: 2000000000        # 2B
+      languages: [ko]
+    
+    # Math (INCREASED)
+    metamath:
+      enabled: true
+      dataset: meta-math/MetaMathQA
+      target_tokens: 4000000000        # 4B
+    gsm8k_math:
+      enabled: true
+      target_tokens: 3000000000        # 3B
+    orca_math:
+      enabled: true
+      dataset: microsoft/orca-math-word-problems-200k
+      target_tokens: 3000000000        # 3B
+    code_math_interleave:
+      enabled: true
+      target_tokens: 2000000000        # 2B (code-math for reasoning boost)
+    
+    # Code: DISABLED (eliminated from plan)
+    the_stack_v2:
+      enabled: false
+    stackoverflow:
+      enabled: false
+      enabled: true
+      languages: [python, javascript, java, typescript, rust, go]
+      target_tokens: 800000000
+    stackoverflow:
+      enabled: false
+    # Specialized
+    math:
+      enabled: true
+      sources: [mathpile, openwebmath]
+      target_tokens: 500000000
+    legal:
+      enabled: false
+    medical:
+      enabled: true
+      sources: [pubmed_abstracts, pmc_oa]
+      target_tokens: 200000000
+    # Multilingual
+    cc100:
+      enabled: true
+      languages: [id, ja, ko]
+      target_tokens_per_lang: 300000000
+    culturax:
+      enabled: true
+      languages: [id, ja, ko]
+      target_tokens_per_lang: 200000000
+    mc4:
+      enabled: true
+      languages: [id, ja, ko]
+      target_tokens_per_lang: 200000000
+
+  provenance:
+    enabled: true
+    log_file: data/raw/provenance.db
+
+# ---------------------------------------------------------------------------
+# A.2 — File Validation
+# ---------------------------------------------------------------------------
+validation:
+  encoding: utf-8
+  reject_non_utf8: true
+  encoding_fallback: [chardet]
+  bom_strip: true
+  checksum_algorithm: blake3
+  mime_validation: true
+  truncation_detection: true
+  quarantine_dir: data/raw/quarantine
+  min_file_size_bytes: 100
+  remove_empty: true
+
+# ---------------------------------------------------------------------------
+# A.3 — Text Extraction & Normalization
+# ---------------------------------------------------------------------------
+extraction:
+  primary_extractor: trafilatura
+  fallback_chain: [readability_lxml, jusText, beautifulsoup]
+  format_parsers:
+    pdf: pdfminer
+    latex: pylatexenc
+    markdown: internal
+    code: raw
+  normalization:
+    unicode_form: NFC
+    ftfy_enabled: true
+    collapse_whitespace: true
+    line_ending: "\n"
+    remove_zero_width: true
+    remove_control_chars: true
+    preserve_math: true
+    preserve_code_blocks: true
+    preserve_tables: true
+
+# ---------------------------------------------------------------------------
+# A.4 — Language Identification
+# ---------------------------------------------------------------------------
+language_id:
+  primary_model: lid.176.bin
+  primary_type: fasttext
+  primary_threshold: 0.65
+  secondary_model: cld3
+  secondary_threshold: 0.5
+  paragraph_level: true
+  target_languages: [en, id, ja, ko]
+  mixed_language_handling: keep_if_primary_target
+  script_routing:
+    cjk: [ja, ko]
+    arabic: [ar]
+    cyrillic: [ru]
+
+# ---------------------------------------------------------------------------
+# A.5 — Content Cleaning
+# ---------------------------------------------------------------------------
+cleaning:
+  web_artifact_removal:
+    enabled: true
+    remove_html_tags: true
+    remove_css: true
+    remove_javascript: true
+    remove_navigation: true
+    remove_footer: true
+    remove_header: true
+    remove_cookie_banners: true
+    remove_ads: true
+    remove_social_widgets: true
+    remove_tracking: true
+    remove_comments: false
+  text_repair:
+    ftfy_enabled: true
+    emoji_normalize: true
+    url_normalize: true
+    email_normalize: true
+    phone_normalize: true
+    excessive_punctuation: true
+    excessive_whitespace: true
+  boilerplate_detection:
+    main_content_ratio_threshold: 0.3
+    trafilatura_prefer_content: true
+
+# ---------------------------------------------------------------------------
+# A.6 — Quality Scoring
+# ---------------------------------------------------------------------------
+quality_scoring:
+  heuristic:
+    perplexity:
+      enabled: true
+      model_type: kenlm
+      model_dir: models/kenlm
+      ngram_order: 5
+      threshold: 10000
+      per_language: true
+    readability:
+      enabled: true
+      en_metric: flesch_kincaid
+      non_en_metric: adapted
+    compression_ratio:
+      enabled: true
+      min_ratio: 2.0
+      max_ratio: 10.0
+    entropy:
+      enabled: true
+      min_entropy: 3.0
+      max_entropy: 6.0
+  model_based:
+    enabled: true
+    model_type: fasttext
+    training_samples: 500000
+    positive_class: [wikipedia, textbooks, curated]
+    negative_class: [random_cc_sample]
+    threshold: 0.5
+  educational:
+    enabled: true
+    annotation_samples: 500000
+    annotator_model: llama-3-70b
+    train_classifier: fasttext
+    edu_threshold: 3
+  composite:
+    weights:
+      model_quality: 0.4
+      perplexity_inverse: 0.2
+      readability: 0.15
+      info_density: 0.15
+      edu_score: 0.1
+    min_final_score: 0.3
+
+# ---------------------------------------------------------------------------
+# A.7 — Safety Filtering (future)
+# ---------------------------------------------------------------------------
+safety:
+  pii_detection: {enabled: false}
+  toxic_detection: {enabled: false}
+  secrets_detection: {enabled: false}
+  copyright_check: {enabled: false}
+  csam_matching: {enabled: false}
+
+# ---------------------------------------------------------------------------
+# A.8 — Deduplication (future)
+# ---------------------------------------------------------------------------
+deduplication:
+  exact: {enabled: false}
+  minhash: {enabled: false}
+  suffix_array: {enabled: false}
+  paragraph: {enabled: false}
+
+# ---------------------------------------------------------------------------
+# A.9 — Benchmark Contamination Detection
+# ---------------------------------------------------------------------------
+contamination:
+  benchmarks:
+    - mmlu
+    - arc_easy
+    - arc_challenge
+    - hellaswag
+    - winogrande
+    - gsm8k
+    - humaneval
+    - mbpp
+    - truthfulqa
+    - bbh
+    - math
+    - ifeval
+  detection:
+    ngram_size: 13
+    ngram_method: exact
+    embedding_method: cosine
+    embedding_model: all-MiniLM-L6-v2
+    embedding_threshold: 0.95
+  action: quarantine
+  quarantine_dir: data/raw/contaminated
+  report_file: data/raw/contamination_report.json
+
+# ---------------------------------------------------------------------------
+# A.10 — Document Filtering (future)
+# ---------------------------------------------------------------------------
+filtering:
+  length:
+    min_tokens: 50
+    max_tokens: 100000
+  repetition:
+    line_dup_max: 0.3
+    paragraph_dup_max: 0.2
+    ngram_max_repeat: 10
+    ngram_size: 10
+    char_max_ratio: 0.2
+  composition:
+    alpha_min_ratio: 0.6
+    numeric_max_ratio: 0.2
+    symbol_max_ratio: 0.1
+    non_printable_max: 0.01
+    mean_word_length_min: 3
+    mean_word_length_max: 15
+
+# ---------------------------------------------------------------------------
+# A.11 — Data Mixing (future)
+# ---------------------------------------------------------------------------
+mixing:
+  target_tokens: 100000000000           # 100B
+  domain_proportions:
+    web_text: 0.55
+    math: 0.12
+    science: 0.05
+    books: 0.05
+    wikipedia: 0.08
+    news: 0.03
+    legal_medical: 0.05
+    educational: 0.07
+  language_proportions:
+    en: 0.28
+    id: 0.18
+    ja: 0.18
+    ko: 0.18
+    math: 0.18
+    ko: 0.23
+    code: 0.05
+    math: 0.03
+  upsampling:
+    code: 3.0
+    math: 5.0
+    wikipedia: 3.0
+    educational: 2.0
+  max_epochs: 5
+  freshness_weight: 1.5
+  curriculum:
+    phase_1:
+      pct: 0.35
+      seq_len: 256
+      difficulty: easier
+    phase_2:
+      pct: 0.40
+      seq_len: 512
+      difficulty: full
+    phase_3:
+      pct: 0.25
+      seq_len: 1024
+      difficulty: quality
+
+# ---------------------------------------------------------------------------
+# A.13 — Tokenization (future)
+# ---------------------------------------------------------------------------
+tokenization:
+  vocab_dir: vocab_6
+  bos_id: 0
+  eos_id: 0
+  pad_id: 15
+  max_seq_len: 2048
+  packing_algorithm: first_fit_decreasing
+  packing_efficiency_target: 0.995
+  document_boundary_marker: true
+  attention_mask_format: document_id
+
+# ---------------------------------------------------------------------------
+# A.14 — Binary Dataset (future)
+# ---------------------------------------------------------------------------
+binary_dataset:
+  shard_size_mb: 512
+  format: numpy_binary
+  mmap_enabled: true
+  index_enabled: true
+  version_prefix: pretrain_v1
+
+# ---------------------------------------------------------------------------
+# Provenance & Monitoring
+# ---------------------------------------------------------------------------
+provenance:
+  enabled: true
+  store: sqlite
+  db_path: data/provenance.db
+  track_all_filters: true
+
+monitoring:
+  enabled: true
+  log_dir: logs
+  track_throughput: true
+  track_rejection_rates: true
+  track_score_distributions: true
+  drift_detection:
+    enabled: true
+    kl_threshold: 0.1

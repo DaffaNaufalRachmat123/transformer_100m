@@ -50,20 +50,21 @@ namespace fs = std::filesystem;
 using Clock = std::chrono::high_resolution_clock;
 
 // ─── Architecture (runtime-configurable via --arch_config) ────────────────
-// Defaults = 892M: D=1280, L=34, GQA 20Q:5KV (d_head 64), SwiGLU FFN 4x.
-// Params: embed 83.9M (tied) + 34 layers x 23.77M + final norm ≈ 892M.
+// Defaults = 492M EN/JA: D=1280, L=24, GQA 20Q:5KV (d_head 64), SwiGLU 2.8x.
 // Kernels are dimension-agnostic (grad_check passed D=64..3072), so these are
 // plain mutable globals refreshed from JSON before any allocation happens.
-static ModelConfig g_arch;              // defaults live in model_config.h
+// The literals below are placeholders; sync_arch() always overwrites them from
+// g_arch, whose real defaults live in transformer/model_config.h.
+static ModelConfig g_arch;
 static std::string g_arch_config = "";  // empty = keep defaults
 
 static int   D_MODEL     = 1280;
-static int   N_LAYERS    = 34;
+static int   N_LAYERS    = 24;
 static int   N_Q_HEADS   = 20;
 static int   N_KV_HEADS  = 5;
 static int   D_HEAD      = 64;
-static int   FFN_DIM     = 5120;
-static int   MODEL_VOCAB = 65536;
+static int   FFN_DIM     = 3584;
+static int   MODEL_VOCAB = 49152;
 static int   MAX_SEQ_LEN = 2048;
 static float ROPE_THETA  = 500000.0f;
 
@@ -752,7 +753,7 @@ int main(int argc, char** argv) {
             printf("Usage: train_pretrain_cuda [options]\n");
             printf("  --data_dir <path>         Corpus directory [data/corpus_final]\n");
             printf("  --checkpoint_dir <path>   Checkpoint output [checkpoints]\n");
-            printf("  --arch_config <path>      Architecture JSON [built-in 892M]\n");
+            printf("  --arch_config <path>      Architecture JSON [built-in 492M]\n");
             printf("  --vocab_dir <path>        Vocab directory [vocab_6]\n");
             printf("  --bpe <path>              BPE binary model path (optional)\n");
             printf("  --max_tokens <N>          Token budget [9B]\n");
@@ -892,7 +893,7 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
     // ─── Spike-detection / auto-decay / cooldown state ─────────────────────
     // Declared before the resume block because train_state.txt parsing
     // (inside the resume block below) needs read/write access to these.
-    float ema_loss = 11.1f;         // ln(65536) ≈ 11.09, expected random init
+    float ema_loss = logf((float)MODEL_VOCAB);  // uniform-prediction loss at init
     bool  ema_initialized = false;
     static constexpr float kEmaBeta = 0.95f;
     float last_grad_norm = 0.0f;

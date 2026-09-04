@@ -24,7 +24,8 @@
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-static constexpr uint32_t VOCAB_SIZE          = 65536;
+// Training target only; BPEEncoder takes its vocab size from the loaded file.
+static constexpr uint32_t VOCAB_SIZE          = 49152;  // EN/JA/code
 static constexpr uint32_t MIN_FREQUENCY       = 15;
 static constexpr uint32_t MIN_FREQUENCY_CJK   = 10;
 static constexpr uint32_t MIN_FREQUENCY_LATIN = 25;

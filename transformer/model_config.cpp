@@ -132,7 +132,7 @@ struct JsonReader {
 // =============================================================================
 
 void ModelConfig::print() const {
-    std::cout << "\n=== Model Config (100M) ===\n";
+    std::cout << "\n=== Model Config ===\n";
     std::cout << std::left << std::setw(20) << "vocab_size"   << vocab_size   << "\n";
     std::cout << std::left << std::setw(20) << "d_model"      << d_model      << "\n";
     std::cout << std::left << std::setw(20) << "n_layers"     << n_layers     << "\n";
@@ -174,8 +174,9 @@ void ModelConfig::save(const std::string& path) const {
     j.write("pad_token_id", pad_token_id);
     j.write("eos_token_id", eos_token_id);
     j.write("bos_token_id", bos_token_id);
-    j.write("architecture", std::string("100m_gqa_rope_swiglu"));
-    j.write_array("languages", {"id", "en", "ja", "ko"});
+    j.write("architecture",
+            std::to_string(param_count() / 1000000) + "m_gqa_rope_swiglu");
+    j.write_array("languages", {"en", "ja"});
     j.end();
 
     std::ofstream f(path);
@@ -193,22 +194,24 @@ ModelConfig ModelConfig::load(const std::string& path) {
     JsonReader r;
     r.parse(f);
 
+    // Missing keys fall back to the struct defaults in model_config.h rather
+    // than to literals here, so there is a single source of truth for the arch.
     ModelConfig cfg;
-    cfg.vocab_size   = r.get_u32  ("vocab_size",   65536);
-    cfg.d_model      = r.get_u32  ("d_model",      576);
-    cfg.n_layers     = r.get_u32  ("n_layers",     13);
-    cfg.n_q_heads    = r.get_u32  ("n_q_heads",    9);
-    cfg.n_kv_heads   = r.get_u32  ("n_kv_heads",   3);
-    cfg.d_head       = r.get_u32  ("d_head",       64);
-    cfg.ffn_dim      = r.get_u32  ("ffn_dim",      2304);
-    cfg.max_seq_len  = r.get_u32  ("max_seq_len",  2048);
-    cfg.rope_theta   = r.get_float("rope_theta",   500000.0f);
-    cfg.weight_decay = r.get_float("weight_decay", 0.1f);
-    cfg.grad_clip    = r.get_float("grad_clip",    1.0f);
-    cfg.weight_tying = r.get_bool ("weight_tying", true);
-    cfg.pad_token_id = r.get_u32  ("pad_token_id", 15);
-    cfg.eos_token_id = r.get_u32  ("eos_token_id", 4);
-    cfg.bos_token_id = r.get_u32  ("bos_token_id", 0);
+    cfg.vocab_size   = r.get_u32  ("vocab_size",   cfg.vocab_size);
+    cfg.d_model      = r.get_u32  ("d_model",      cfg.d_model);
+    cfg.n_layers     = r.get_u32  ("n_layers",     cfg.n_layers);
+    cfg.n_q_heads    = r.get_u32  ("n_q_heads",    cfg.n_q_heads);
+    cfg.n_kv_heads   = r.get_u32  ("n_kv_heads",   cfg.n_kv_heads);
+    cfg.d_head       = r.get_u32  ("d_head",       cfg.d_head);
+    cfg.ffn_dim      = r.get_u32  ("ffn_dim",      cfg.ffn_dim);
+    cfg.max_seq_len  = r.get_u32  ("max_seq_len",  cfg.max_seq_len);
+    cfg.rope_theta   = r.get_float("rope_theta",   cfg.rope_theta);
+    cfg.weight_decay = r.get_float("weight_decay", cfg.weight_decay);
+    cfg.grad_clip    = r.get_float("grad_clip",    cfg.grad_clip);
+    cfg.weight_tying = r.get_bool ("weight_tying", cfg.weight_tying);
+    cfg.pad_token_id = r.get_u32  ("pad_token_id", cfg.pad_token_id);
+    cfg.eos_token_id = r.get_u32  ("eos_token_id", cfg.eos_token_id);
+    cfg.bos_token_id = r.get_u32  ("bos_token_id", cfg.bos_token_id);
     return cfg;
 }
 
