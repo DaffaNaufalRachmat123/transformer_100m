@@ -37,6 +37,7 @@
 #include <chrono>
 #include <climits>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -856,7 +857,7 @@ void BPETrainer::train() {
         // --- Checkpoint ---
         if ((step + 1) % CHECKPOINT_INTERVAL == 0) {
             std::cout << "\n[BPE] Auto-checkpoint at merge " << (step + 1) << "...\n";
-            save_checkpoint("bpe_checkpoints/bpe_ckpt.bin");
+            save_checkpoint(ckpt_path_);
         }
 
         // --- Check for SIGINT (cooperative stop) ---
@@ -920,6 +921,12 @@ void BPETrainer::resume() {
 // Checkpoint save/load
 // ---------------------------------------------------------------------------
 void BPETrainer::save_checkpoint(const std::string& path) const {
+    // train() auto-checkpoints every 500 merges; without this the whole run
+    // aborts there if the parent directory does not already exist.
+    std::error_code ec;
+    auto parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+
     std::ofstream os(path, std::ios::binary);
     if (!os) throw std::runtime_error("[BPE] Cannot write checkpoint: " + path);
 

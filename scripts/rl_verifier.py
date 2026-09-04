@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """
-rl_verifier.py (v2) — Unified rule-based reward for RL.
+rl_verifier.py (v3) — Unified rule-based reward for RL.
 
-Handles two completion kinds in one file (selected per request row):
+Handles three completion kinds in one file (selected per request row):
+  ASSERT rows (non-empty `tests`): append the assert block to the completion and
+      run it. Exit code 0 means every assertion held. This is the MBPP /
+      HumanEval contract, where correctness is a function signature plus test
+      cases rather than stdout text.
   CODE rows (non-empty `input`): extract a Python block, run it against the
       row's stdin/expected. If it passes AND a task generator can be matched,
       also run 3 EXTRA freshly generated instances of the same task
       (anti lucky-pass test bank) — all must pass.
-  MATH rows (empty `input`): the completion is chain-of-thought text ending
+  MATH rows (both empty): the completion is chain-of-thought text ending
       with an anchor line ("Therefore, the answer is X." /
       "Jadi, jawabannya adalah X." / "したがって、答えはXです。").
       Reward = anchor answer matches expected (whitespace-normalised;
       thousand-separator tolerant).
 
 Reads a request JSONL (one line per sampled completion):
-    {"id": <int>, "lang": "en"|"ja"|"id", "code": "<generated text>",
-     "input": "<stdin content or empty>", "expected": "<expected>"}
+    {"id": <int>, "lang": "en"|"ja", "code": "<generated text>",
+     "input": "<stdin content or empty>", "expected": "<expected>",
+     "tests": "<assert block or empty>", "setup": "<optional preamble>"}
 
 Writes reward JSONL: {"id": <int>, "reward": 0.0|1.0}
+
+NOTE: completions are executed. Runs are sandboxed only by a wall-clock timeout,
+so this must not be pointed at untrusted input outside a disposable environment.
 
 Test-bank matching: the (input, expected) pair is looked up in
 rl_data/coding.jsonl to recover the task name, then extra instances come from
@@ -174,6 +182,19 @@ def code_reward(code, stdin_data, expected, bank, gen, rng):
     return True
 
 
+def assert_reward(code, tests, setup="", timeout=10.0):
+    """MBPP/HumanEval contract: solution + assert block must exit cleanly.
+
+    Model output often repeats the prompt's import lines or docstring, which is
+    harmless, but a bare markdown fence is not, so reuse extract_code().
+    """
+    if not code or not tests:
+        return False
+    program = "\n\n".join(p for p in (setup, code, tests) if p and p.strip())
+    rc, _, _ = run_code(program, "", timeout=timeout)
+    return rc == 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("req")
@@ -187,7 +208,7 @@ def main():
 
     rng = random.Random(1234)
     results = []
-    n_code = n_math = 0
+    n_code = n_math = n_assert = 0
     with open(args.req, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -198,8 +219,13 @@ def main():
             text = rec.get("code", "")
             stdin_data = rec.get("input", "") or ""
             expected = (rec.get("expected", "") or "").strip()
+            tests = rec.get("tests", "") or ""
 
-            if stdin_data == "":
+            if tests.strip():
+                reward = 1.0 if assert_reward(extract_code(text), tests,
+                                              rec.get("setup", "")) else 0.0
+                n_assert += 1
+            elif stdin_data == "":
                 # math / CoT row
                 reward = 1.0 if math_reward(text, expected) else 0.0
                 n_math += 1
@@ -217,7 +243,7 @@ def main():
     n = len(results)
     ok = sum(1 for r in results if r["reward"] > 0.0)
     print(f"[rl-verifier] {ok}/{n} passed ({100.0 * ok / max(1, n):.1f}%) "
-          f"[code rows: {n_code}, math rows: {n_math}]", flush=True)
+          f"[code: {n_code}, math: {n_math}, assert: {n_assert}]", flush=True)
 
 
 if __name__ == "__main__":

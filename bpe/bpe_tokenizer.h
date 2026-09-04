@@ -184,6 +184,8 @@ public:
     bool is_paused() const { return paused_.load(); }
     void save_checkpoint(const std::string& path) const;
     bool load_checkpoint(const std::string& path);
+    // Where train() writes its every-500-merge auto-checkpoint.
+    void set_checkpoint_path(const std::string& p) { ckpt_path_ = p; }
     void save(const std::string& vocab_path, const std::string& merges_path) const;
     void load(const std::string& vocab_path, const std::string& merges_path);
     void save_binary(const std::string& path) const;
@@ -228,6 +230,7 @@ private:
     std::condition_variable pause_cv_;
     mutable std::mutex mtx_;
     uint64_t total_words_ = 0;
+    std::string ckpt_path_ = "bpe_checkpoints/bpe_ckpt.bin";
 };
 
 // ---------------------------------------------------------------------------

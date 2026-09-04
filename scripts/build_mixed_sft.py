@@ -28,7 +28,8 @@ from pathlib import Path
 SOURCES = {
     "facts": ["sft_facts_v11"],
     "translation": ["sft_translation_tri", "sft_translation_bank"],
-    "coding": ["sft_coding_v3", "sft_code_explain", "sft_code_bugfix"],
+    "coding": ["sft_coding_v3", "sft_code_explain", "sft_code_bugfix",
+               "sft_coding_mbpp"],
     "math": ["sft_math_pot", "sft_math_v2"],
 }
 
