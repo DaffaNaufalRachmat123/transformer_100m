@@ -1,0 +1,126 @@
+{
+  "model": "translation_resources/facts/ckpt_sft_final.safetensors",
+  "per_family": {
+    "coding": {
+      "n": 25,
+      "chrf": 0.0534,
+      "has_code": 0.0,
+      "empty": 0.08
+    },
+    "facts": {
+      "n": 25,
+      "lang_ok": 0.92,
+      "value_hit": 0.24,
+      "empty": 0.08
+    },
+    "math": {
+      "n": 25,
+      "answer_hit": 0.0,
+      "chrf": 0.0827,
+      "empty": 0.0
+    },
+    "translation": {
+      "n": 25,
+      "lang_ok": 0.84,
+      "chrf": 0.0353,
+      "empty": 0.16
+    }
+  },
+  "verdict": {
+    "coding": {
+      "metric": "chrf",
+      "value": 0.0534,
+      "threshold": 0.3,
+      "pass": false
+    },
+    "facts": {
+      "metric": "value_hit",
+      "value": 0.24,
+      "threshold": 0.6,
+      "pass": false
+    },
+    "math": {
+      "metric": "answer_hit",
+      "value": 0.0,
+      "threshold": 0.3,
+      "pass": false
+    },
+    "translation": {
+      "metric": "chrf",
+      "value": 0.0353,
+      "threshold": 0.45,
+      "pass": false
+    }
+  },
+  "all_pass": false,
+  "samples": {
+    "coding": [
+      {
+        "lang": "en",
+        "gold": "a, b = map(int, input().split())\nprint(max(a, b) - min(a, b))",
+        "pred": "In Python, the number of an official language is English."
+      },
+      {
+        "lang": "en",
+        "gold": "s = input()\nprint('yes' if s == s[::-1] else 'no')",
+        "pred": "In Python, the language of�"
+      },
+      {
+        "lang": "ja",
+        "gold": "n = int(input())\np = 1\nfor _ in range(n):\n    p *= int(input())\nprint(p)",
+        "pred": "nです。"
+      }
+    ],
+    "facts": [
+      {
+        "lang": "en",
+        "gold": "The atomic number of unbiseptium is 127.",
+        "pred": "unbiseptium is in Europe."
+      },
+      {
+        "lang": "ja",
+        "gold": "ニウエについては、面積はおよそ260平方キロメートルです。",
+        "pred": "ニウエについては、面積はおよそ260平方キロメートルです。"
+      },
+      {
+        "lang": "ja",
+        "gold": "東ティモールの通貨はアメリカ合衆国ドルです。",
+        "pred": "人口はおよそ1400638人です。"
+      }
+    ],
+    "math": [
+      {
+        "lang": "en",
+        "gold": "```python\nnet = 20 - 11\nvolume = net * 6\nprint(volume)\n```\nTherefore, the answer is 54.",
+        "pred": "A tank fills at 20 L/h."
+      },
+      {
+        "lang": "en",
+        "gold": "Outbound distance = 82 × 6 = 492 km. Driving back 87 km leaves 492 − 87 = 405 km from the start.\nTherefore, the answer i",
+        "pred": "The car is in the lead."
+      },
+      {
+        "lang": "en",
+        "gold": "Last term = 14 + (18 − 1) × 11 = 201. Sum = 18 × (14 + 201) ÷ 2 = 1935.\nTherefore, the answer is 1935.",
+        "pred": "The currency of the currency is West African CFA franc."
+      }
+    ],
+    "translation": [
+      {
+        "lang": "en-ja",
+        "gold": "たった、1つよ",
+        "pred": "日本語に翻訳は一番高い場所は富士山です。"
+      },
+      {
+        "lang": "ja-en",
+        "gold": "General Eiling, why were you trying to rob the gold reserve?",
+        "pred": "Tran terbi is in Europe."
+      },
+      {
+        "lang": "ja-en",
+        "gold": "- Dad? - Huh?",
+        "pred": "In Malaysia, the language of Malaysia is Malay."
+      }
+    ]
+  }
+}

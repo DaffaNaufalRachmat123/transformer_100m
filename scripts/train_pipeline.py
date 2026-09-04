@@ -104,6 +104,8 @@ def build_pretrain_cmd(args, env):
         "--loss_scale", str(args.loss_scale),
         "--safety", args.safety,
     ]
+    if args.arch_config:
+        cmd += ["--arch_config", args.arch_config]
     if args.bpe:
         cmd += ["--bpe", args.bpe]
     if args.upload_every > 0:
@@ -151,6 +153,8 @@ def build_sft_cmd(args, env):
         "--save_every", str(args.sft_save_every),
         "--log_every", str(args.log_every),
     ]
+    if args.arch_config:
+        cmd += ["--arch_config", args.arch_config]
     if args.bpe:
         cmd += ["--bpe", args.bpe]
     if args.sft_max_steps > 0:
@@ -210,6 +214,8 @@ def build_dpo_cmd(args, env):
     ]
     if ref_model:
         cmd += ["--ref_model", ref_model]
+    if args.arch_config:
+        cmd += ["--arch_config", args.arch_config]
     if args.bpe:
         cmd += ["--bpe", args.bpe]
     if args.dpo_max_steps > 0:
@@ -280,6 +286,9 @@ def main():
     parser.add_argument("--save_every", type=int, default=150)
     parser.add_argument("--eval_every_tokens", type=int, default=200_000_000)
     parser.add_argument("--eval_infer_bin", default="./build_infer/infer")
+    parser.add_argument("--arch_config", default="",
+                        help="architecture JSON (e.g. config_492m.json); "
+                             "empty keeps the trainer's built-in default")
 
     # ─── SFT flags ──────────────────────────────────────────────────────
     parser.add_argument("--sft_dir", default="sft_data/sft_translation_focused")
