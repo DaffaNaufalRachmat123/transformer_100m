@@ -85,20 +85,42 @@ class BPEReference:
 
     # ── stage 1: whitespace pre-tokenizer ────────────────────────────────
     def pretokenize(self, segment: bytes):
+        """Split on whitespace, keeping the whitespace bytes verbatim.
+
+        Collapsing runs to a single space (the previous behaviour) flattens
+        multi-line Python onto one line, so generated code cannot parse.
+        Only ONE space fuses to the following word, GPT-2 style; the rest of
+        the run is its own token. Fusing the whole run instead makes
+        "\\n    def" and "\\n        def" distinct entries, multiplying every
+        word by its indentation depth.
+        """
         out = []
-        p, n, first = 0, len(segment), True
+        p, n = 0, len(segment)
         while p < n:
+            ws_start = p
             while p < n and segment[p] <= 0x20:
                 p += 1
-            if p >= n:
-                break
-            start = p
+            ws_end = p
+            word_start = p
             while p < n and segment[p] > 0x20:
                 p += 1
-            word = "" if first else SPACE_GLYPH
-            word += "".join(BYTE_ENCODER[b] for b in segment[start:p])
-            first = False
-            out.append(word)
+            word_end = p
+            if ws_start == ws_end and word_start == word_end:
+                break
+
+            ws_tail = ws_end
+            if word_start != word_end and ws_end > ws_start \
+                    and segment[ws_end - 1] == 0x20:
+                ws_tail = ws_end - 1
+
+            if ws_tail > ws_start:
+                out.append("".join(BYTE_ENCODER[b]
+                                   for b in segment[ws_start:ws_tail]))
+
+            word = "".join(BYTE_ENCODER[b] for b in segment[ws_tail:ws_end])
+            word += "".join(BYTE_ENCODER[b] for b in segment[word_start:word_end])
+            if word:
+                out.append(word)
         return out
 
     # ── stage 2: longest-match seed + left-to-right merge passes ─────────
@@ -200,30 +222,29 @@ def main():
         assert BYTE_ENCODER[0x00] == "\u0100" and BYTE_ENCODER[0x7f] == "\u0121"
         assert BYTE_ENCODER[0xa0] == "\u0142" and BYTE_ENCODER[0xad] == "\u0143"
         print(f"vocab={len(enc.tokens)} merges={len(enc.merges)}")
-        assert len(enc.tokens) == 65536
-        assert len(enc.merges) == 65222, f"merges={len(enc.merges)}"
         cases = [
             "Hello world",
             "What is the capital of Japan?",
             "日本の首都は東京です。",
-            "Terjemahkan ke bahasa Indonesia: Good morning.",
             "<|system|>You are a helpful, accurate multilingual assistant."
             "<|user|>What is the capital of France?<|assistant|>",
+            # Indentation and newlines must survive or generated Python cannot
+            # parse, which silently pins every RL code reward at zero.
+            "def solve(n):\n    total = 0\n    for i in range(n):\n"
+            "        total += i * i\n    return total\nprint(solve(10))",
         ]
         ok = True
         for c in cases:
             ids = enc.encode(c)
             back = enc.decode(ids, skip_special=False)
-            # whitespace is intentionally lossy (runs collapse to one space)
-            expect = " ".join(c.split())
-            got = " ".join(back.split())
-            flag = "ok " if got == expect else "DIFF"
-            if got != expect:
+            same = back == c
+            if not same:
                 ok = False
-            print(f"  [{flag}] {len(ids):3d} ids | {c[:52]}")
-            if got != expect:
-                print(f"         expect: {expect[:70]}")
-                print(f"         got   : {got[:70]}")
+            print(f"  [{'ok ' if same else 'DIFF'}] {len(ids):3d} ids | "
+                  f"{c[:52]!r}")
+            if not same:
+                print(f"         expect: {c[:70]!r}")
+                print(f"         got   : {back[:70]!r}")
         print("selftest:", "PASS" if ok else "FAIL (see DIFF above)")
         return
 

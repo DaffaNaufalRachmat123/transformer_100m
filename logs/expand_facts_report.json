@@ -1,0 +1,26 @@
+{
+  "per_category": {
+    "city_country": 2444,
+    "city_population": 2081,
+    "mountain_elevation": 1046,
+    "mountain_country": 1016,
+    "river_length": 2383,
+    "river_country": 1924,
+    "lake_country": 510,
+    "island_country": 1509,
+    "film_director": 4550,
+    "film_year": 4501,
+    "book_author": 1247,
+    "band_origin": 1104,
+    "person_birthyear": 4708,
+    "person_country": 4294,
+    "person_occupation": 5481,
+    "university_country": 356,
+    "company_country": 1051,
+    "airport_country": 1313,
+    "species_class": 5407,
+    "planet_star": 0
+  },
+  "total_new": 46925,
+  "out": "data/wikidata_facts_expanded.tsv"
+}

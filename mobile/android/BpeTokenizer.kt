@@ -85,21 +85,41 @@ class BpeTokenizer(vocabStream: InputStream, mergesStream: InputStream) {
         padId = tokenToId["<|pad|>"] ?: 15
     }
 
-    /** Stage 1: whitespace pre-tokenizer over raw bytes. */
+    /**
+     * Stage 1: whitespace pre-tokenizer over raw bytes.
+     *
+     * Whitespace runs are kept verbatim rather than collapsed to one space;
+     * collapsing flattens multi-line Python onto a single line so generated
+     * code cannot parse. Must match the C++ trainer exactly.
+     */
     private fun pretokenize(seg: ByteArray, from: Int, to: Int): List<String> {
         val out = ArrayList<String>()
         var p = from
-        var first = true
         while (p < to) {
+            val wsStart = p
             while (p < to && (seg[p].toInt() and 0xFF) <= 0x20) p++
-            if (p >= to) break
-            val start = p
+            val wsEnd = p
+            val wordStart = p
             while (p < to && (seg[p].toInt() and 0xFF) > 0x20) p++
+            val wordEnd = p
+            if (wsStart == wsEnd && wordStart == wordEnd) break
+
+            // GPT-2 convention: at most ONE space fuses to the following word,
+            // the rest of the run is its own token. Fusing the whole run makes
+            // every word distinct per indentation depth.
+            var wsTail = wsEnd
+            if (wordStart != wordEnd && wsEnd > wsStart &&
+                (seg[wsEnd - 1].toInt() and 0xFF) == 0x20) wsTail = wsEnd - 1
+
+            if (wsTail > wsStart) {
+                val ws = StringBuilder()
+                for (i in wsStart until wsTail) ws.append(BYTE_ENCODER[seg[i].toInt() and 0xFF])
+                out.add(ws.toString())
+            }
             val sb = StringBuilder()
-            if (!first) sb.append(BYTE_ENCODER[0x20])
-            for (i in start until p) sb.append(BYTE_ENCODER[seg[i].toInt() and 0xFF])
-            first = false
-            out.add(sb.toString())
+            for (i in wsTail until wsEnd) sb.append(BYTE_ENCODER[seg[i].toInt() and 0xFF])
+            for (i in wordStart until wordEnd) sb.append(BYTE_ENCODER[seg[i].toInt() and 0xFF])
+            if (sb.isNotEmpty()) out.add(sb.toString())
         }
         return out
     }

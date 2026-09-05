@@ -249,26 +249,45 @@ std::vector<std::string> BPETrainer::pretokenize(const std::string& text) const 
 
     const char* p   = text.data();
     const char* end = p + text.size();
-    bool first_word = true;
 
     while (p < end) {
-        // Skip whitespace
+        // Whitespace is kept verbatim rather than collapsed to one space:
+        // collapsing turns valid multi-line Python into a single line, so
+        // generated code can never parse and the RL verifier can never award
+        // reward. Byte-encoding maps '\n' -> 'Ċ' and indent -> 'ĠĠĠĠ'.
+        const char* ws_start = p;
         while (p < end && (uint8_t)*p <= 0x20) ++p;
-        if (p >= end) break;
+        const char* ws_end = p;
 
-        // Collect non-whitespace run
-        const char* start = p;
+        const char* word_start = p;
         while (p < end && (uint8_t)*p > 0x20) ++p;
+        const char* word_end = p;
 
-        // Byte-encode the word inline with GPT-2 Ġ prefix
+        if (ws_start == ws_end && word_start == word_end) break;
+
+        // GPT-2 convention: at most ONE space fuses to the following word and
+        // the rest of the run becomes its own token. Fusing the whole run made
+        // "\n    def" and "\n        def" separate entries, multiplying every
+        // word by its indentation depth (29.5M unique words -> OOM).
+        const char* ws_tail = ws_end;
+        if (word_start != word_end && ws_end > ws_start && *(ws_end - 1) == ' ')
+            ws_tail = ws_end - 1;
+
+        if (ws_tail > ws_start) {
+            std::string ws;
+            ws.reserve((size_t)(ws_tail - ws_start) * 2);
+            for (const char* c = ws_start; c < ws_tail; ++c)
+                ws += BYTE_ENCODER[(uint8_t)*c];
+            tokens.push_back(std::move(ws));
+        }
+
         std::string encoded;
-        encoded.reserve((p - start) * 2 + 1);
-        if (!first_word) encoded += BYTE_ENCODER[0x20]; // Ġ = space prefix
-        for (const char* c = start; c < p; ++c)
+        encoded.reserve((size_t)(word_end - ws_tail) * 2);
+        for (const char* c = ws_tail; c < ws_end; ++c)
             encoded += BYTE_ENCODER[(uint8_t)*c];
-        first_word = false;
-
-        tokens.push_back(std::move(encoded));
+        for (const char* c = word_start; c < word_end; ++c)
+            encoded += BYTE_ENCODER[(uint8_t)*c];
+        if (!encoded.empty()) tokens.push_back(std::move(encoded));
     }
     return tokens;
 }
@@ -1383,19 +1402,38 @@ bool BPEEncoder::load_binary(const std::string& path) {
 // MLX functions removed — CUDA-only build
 
 std::vector<std::string> BPEEncoder::pretokenize(const std::string& text) const {
+    // Must mirror BPETrainer::pretokenize exactly, including the one-space
+    // fusion rule, or encode() will not reproduce the training segmentation.
     std::vector<std::string> tokens;
     const char* p = text.data(), *end = p + text.size();
-    bool first_word = true;
     while (p < end) {
+        const char* ws_start = p;
         while (p < end && (uint8_t)*p <= 0x20) ++p;
-        if (p >= end) break;
-        const char* start = p;
+        const char* ws_end = p;
+
+        const char* word_start = p;
         while (p < end && (uint8_t)*p > 0x20) ++p;
+        const char* word_end = p;
+
+        if (ws_start == ws_end && word_start == word_end) break;
+
+        const char* ws_tail = ws_end;
+        if (word_start != word_end && ws_end > ws_start && *(ws_end - 1) == ' ')
+            ws_tail = ws_end - 1;
+
+        if (ws_tail > ws_start) {
+            std::string ws;
+            for (const char* c = ws_start; c < ws_tail; ++c)
+                ws += BYTE_ENCODER[(uint8_t)*c];
+            tokens.push_back(std::move(ws));
+        }
+
         std::string encoded;
-        if (!first_word) encoded += BYTE_ENCODER[0x20]; // Ġ = space prefix
-        for (const char* c = start; c < p; ++c) encoded += BYTE_ENCODER[(uint8_t)*c];
-        first_word = false;
-        tokens.push_back(std::move(encoded));
+        for (const char* c = ws_tail; c < ws_end; ++c)
+            encoded += BYTE_ENCODER[(uint8_t)*c];
+        for (const char* c = word_start; c < word_end; ++c)
+            encoded += BYTE_ENCODER[(uint8_t)*c];
+        if (!encoded.empty()) tokens.push_back(std::move(encoded));
     }
     return tokens;
 }

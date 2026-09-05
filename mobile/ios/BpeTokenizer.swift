@@ -85,20 +85,45 @@ public final class BpeTokenizer {
     }
 
     /// Stage 1: whitespace pre-tokenizer over raw bytes.
+    ///
+    /// Whitespace runs are kept verbatim rather than collapsed to one space;
+    /// collapsing flattens multi-line Python onto a single line so generated
+    /// code cannot parse. Must match the C++ trainer exactly.
     private func pretokenize(_ b: [UInt8], _ from: Int, _ to: Int) -> [[UInt8]] {
         var out: [[UInt8]] = []
         var p = from
-        var first = true
         while p < to {
+            let wsStart = p
             while p < to && b[p] <= 0x20 { p += 1 }
-            if p >= to { break }
-            let start = p
+            let wsEnd = p
+            let wordStart = p
             while p < to && b[p] > 0x20 { p += 1 }
+            let wordEnd = p
+            if wsStart == wsEnd && wordStart == wordEnd { break }
+
+            // GPT-2 convention: at most ONE space fuses to the following word,
+            // the rest of the run is its own token. Fusing the whole run makes
+            // every word distinct per indentation depth.
+            var wsTail = wsEnd
+            if wordStart != wordEnd && wsEnd > wsStart && b[wsEnd - 1] == 0x20 {
+                wsTail = wsEnd - 1
+            }
+
+            if wsTail > wsStart {
+                var ws: [UInt8] = []
+                for i in wsStart..<wsTail {
+                    ws.append(contentsOf: Array(Self.byteEncoder[Int(b[i])].utf8))
+                }
+                out.append(ws)
+            }
             var word: [UInt8] = []
-            if !first { word.append(contentsOf: Array(Self.byteEncoder[0x20].utf8)) }
-            for i in start..<p { word.append(contentsOf: Array(Self.byteEncoder[Int(b[i])].utf8)) }
-            first = false
-            out.append(word)
+            for i in wsTail..<wsEnd {
+                word.append(contentsOf: Array(Self.byteEncoder[Int(b[i])].utf8))
+            }
+            for i in wordStart..<wordEnd {
+                word.append(contentsOf: Array(Self.byteEncoder[Int(b[i])].utf8))
+            }
+            if !word.isEmpty { out.append(word) }
         }
         return out
     }
