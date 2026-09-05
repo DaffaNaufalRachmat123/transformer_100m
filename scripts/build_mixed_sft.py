@@ -26,7 +26,7 @@ from pathlib import Path
 # Family -> source dataset dirs under sft_data/. Listed newest/best first;
 # a family draws from every listed dir, so add a dir to widen coverage.
 SOURCES = {
-    "facts": ["sft_facts_v11"],
+    "facts": ["sft_facts_expanded", "sft_facts_v11"],
     "translation": ["sft_translation_tri", "sft_translation_bank"],
     "coding": ["sft_coding_v3", "sft_code_explain", "sft_code_bugfix",
                "sft_coding_mbpp"],
