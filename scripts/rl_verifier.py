@@ -46,9 +46,19 @@ import tempfile
 
 EXTRA_CASES = 3  # additional fresh instances for matched code tasks
 
+# Reasoning is scratch work, never part of the answer. An unterminated opener is
+# dropped to the end so a truncated completion cannot leak its plan into the
+# executed program.
+THINK_RE = re.compile(r"<\|think\|>.*?(?:<\|/think\|>|$)", re.DOTALL)
+
+
+def strip_think(text):
+    return THINK_RE.sub("", text or "").strip()
+
 
 def extract_code(text):
     """Pull Python code out of a model completion (markdown-safe)."""
+    text = strip_think(text)
     if not text:
         return ""
     fences = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
@@ -102,6 +112,7 @@ def norm_number(s):
 
 def math_reward(text, expected):
     """Extract the anchor-line answer from CoT text; compare to expected."""
+    text = strip_think(text)
     if not text:
         return False
     lines = [l for l in text.strip().split("\n") if l.strip()]

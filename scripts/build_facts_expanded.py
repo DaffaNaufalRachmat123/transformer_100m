@@ -32,7 +32,9 @@ ATTRS = {
     "person_country":     ("country of citizenship", "国籍", "occupation"),
     "film_director":      ("director", "監督", "release year"),
     "film_year":          ("release year", "公開年", "director"),
-    "species_class":      ("class", "綱", "country"),
+    # P171 is "parent taxon", not class: it resolves to whichever rank sits
+    # directly above the entity, so the attribute is named for what it is.
+    "species_parent":     ("parent taxon", "親分類群", "country"),
     "river_length":       ("length", "長さ", "country"),
     "river_country":      ("country", "国", "length"),
     "island_country":     ("country", "国", "population"),
@@ -44,6 +46,7 @@ ATTRS = {
     "mountain_country":   ("country", "国", "elevation"),
     "lake_country":       ("country", "国", "area"),
     "university_country": ("country", "国", "founding year"),
+    "planet_star":        ("host star", "主星", "orbital period"),
 }
 
 Q_EN = [

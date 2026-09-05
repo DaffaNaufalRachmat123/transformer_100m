@@ -7,8 +7,8 @@
 <|/code|>
 <|translate|>
 <|summary|>
-<|phone_event|>
-<|app_usage|>
+<|think|>
+<|/think|>
 <|lang_id|>
 <|lang_en|>
 <|lang_ja|>

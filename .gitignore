@@ -16,7 +16,8 @@ client_secret_*.json
 .venv/
 gguf/
 llm_data_pipeline/language_id/lid.176.bin
-llm_data_pipeline/**/__pycache__/bpe_checkpoints/
+llm_data_pipeline/**/__pycache__/
 logs/train_bpe_v7.log
 logs/expand_facts.log
 bpe_checkpoints/
+logs/expand_facts_v2.log

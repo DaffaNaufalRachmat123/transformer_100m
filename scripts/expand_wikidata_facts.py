@@ -32,36 +32,50 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ENDPOINT = "https://query.wikidata.org/sparql"
 
-# (entity class constraint, property, value kind, min sitelinks)
+# (entity class constraint, property, value kind, min sitelinks, single_valued)
 #   value kind: "item" resolves the object's own EN/JA labels
-#               "num"  keeps the raw literal
-#               "date" keeps the year only
+#               "qty"  SI-normalised amount (metres for length/elevation)
+#               "count" unitless integer (population)
+#               "date" year only, negative years rendered as BC
+#   single_valued: reject entities carrying more than one value for the
+#   property. Wikidata lists every co-director, co-author, dual citizenship and
+#   secondary occupation, so picking one arbitrarily produced claims like
+#   "George Washington is a writer".
 SPECS = {
     # --- geography -------------------------------------------------------
-    "city_country":      ("wd:Q515",     "P17",   "item", 30),
-    "city_population":   ("wd:Q515",     "P1082", "num",  30),
-    "mountain_elevation":("wd:Q8502",    "P2044", "num",  15),
-    "mountain_country":  ("wd:Q8502",    "P17",   "item", 15),
-    "river_length":      ("wd:Q4022",    "P2043", "num",  15),
-    "river_country":     ("wd:Q4022",    "P17",   "item", 15),
-    "lake_country":      ("wd:Q23397",   "P17",   "item", 15),
-    "island_country":    ("wd:Q23442",   "P17",   "item", 15),
+    "city_country":      ("wd:Q515",     "P17",   "item",  30, True),
+    "city_population":   ("wd:Q515",     "P1082", "count", 30, True),
+    "mountain_elevation":("wd:Q8502",    "P2044", "qty",   15, True),
+    "mountain_country":  ("wd:Q8502",    "P17",   "item",  15, True),
+    "river_length":      ("wd:Q4022",    "P2043", "qty",   15, True),
+    "river_country":     ("wd:Q4022",    "P17",   "item",  15, True),
+    "lake_country":      ("wd:Q23397",   "P17",   "item",  15, True),
+    "island_country":    ("wd:Q23442",   "P17",   "item",  15, True),
     # --- culture ---------------------------------------------------------
-    "film_director":     ("wd:Q11424",   "P57",   "item", 25),
-    "film_year":         ("wd:Q11424",   "P577",  "date", 25),
-    "book_author":       ("wd:Q7725634", "P50",   "item", 20),
-    "band_origin":       ("wd:Q215380",  "P495",  "item", 20),
+    "film_director":     ("wd:Q11424",   "P57",   "item",  25, True),
+    "film_year":         ("wd:Q11424",   "P577",  "date",  25, True),
+    "book_author":       ("wd:Q7725634", "P50",   "item",  20, True),
+    "band_origin":       ("wd:Q215380",  "P495",  "item",  20, True),
     # --- people ----------------------------------------------------------
-    "person_birthyear":  ("wd:Q5",       "P569",  "date", 45),
-    "person_country":    ("wd:Q5",       "P27",   "item", 45),
-    "person_occupation": ("wd:Q5",       "P106",  "item", 45),
+    "person_birthyear":  ("wd:Q5",       "P569",  "date",  45, True),
+    "person_country":    ("wd:Q5",       "P27",   "item",  45, True),
+    "person_occupation": ("wd:Q5",       "P106",  "item",  45, True),
     # --- organisations ---------------------------------------------------
-    "university_country":("wd:Q3918",    "P17",   "item", 20),
-    "company_country":   ("wd:Q4830453", "P17",   "item", 25),
-    "airport_country":   ("wd:Q1248784", "P17",   "item", 15),
+    "university_country":("wd:Q3918",    "P17",   "item",  20, True),
+    "company_country":   ("wd:Q4830453", "P17",   "item",  25, True),
+    "airport_country":   ("wd:Q1248784", "P17",   "item",  15, True),
     # --- science ---------------------------------------------------------
-    "species_class":     ("wd:Q16521",   "P171",  "item", 25),
-    "planet_star":       ("wd:Q634",     "P397",  "item", 10),
+    # P171 is "parent taxon", which resolves to whatever rank sits directly
+    # above the entity (genus, subgenus, family). Calling it "class" made
+    # every row false; the category is named for what the property means.
+    "species_parent":    ("wd:Q16521",   "P171",  "item",  25, True),
+    "planet_star":       ("wd:Q634",     "P397",  "item",  10, True),
+}
+
+# Rendering unit for SI-normalised quantities, per property.
+QTY_UNITS = {
+    "P2043": ("km", 0.001),   # length: metres -> kilometres
+    "P2044": ("m", 1.0),      # elevation stays in metres
 }
 
 
@@ -88,7 +102,7 @@ def sparql(query, max_retries=6, timeout=180):
     return []
 
 
-def build_query(cls, prop, kind, min_links, limit, offset):
+def build_query(cls, prop, kind, min_links, limit, offset, single=True):
     """One flat query; labels and value come back with the entity.
 
     No ORDER BY: ranking ~5M cities by sitelink count exceeds the endpoint's
@@ -102,9 +116,28 @@ def build_query(cls, prop, kind, min_links, limit, offset):
   ?val rdfs:label ?val_en FILTER(lang(?val_en) = "en")
   ?val rdfs:label ?val_ja FILTER(lang(?val_ja) = "ja")"""
         value_sel = "?val_en ?val_ja"
+    elif kind == "qty":
+        # Normalised value: Wikidata stores river lengths in km and miles
+        # interchangeably, so the raw amount is meaningless without its unit.
+        # psn: converts to the SI base unit (metres here).
+        value_bind = f"""
+  ?sub p:{prop}/psn:{prop} [ wikibase:quantityAmount ?val_raw ] ."""
+        value_sel = "?val_raw"
     else:
         value_bind = f"\n  ?sub wdt:{prop} ?val_raw ."
         value_sel = "?val_raw"
+
+    # Reject entities with more than one value so no arbitrary pick is made.
+    # The count must walk the SAME path the value binding uses: wdt: exposes
+    # only the truthy value, so counting it while reading normalised values
+    # let the Nile through with both 2,850 km and 6,650 km attached.
+    uniq = ""
+    if single:
+        count_path = (f"p:{prop}/psn:{prop} [ wikibase:quantityAmount ?v ]"
+                      if kind == "qty" else f"wdt:{prop} ?v")
+        uniq = (f"\n  {{ SELECT ?sub (COUNT(DISTINCT ?v) AS ?nv) WHERE "
+                f"{{ ?sub wdt:P31 {cls} ; {count_path} }} GROUP BY ?sub }}"
+                f"\n  FILTER(?nv = 1)")
 
     return f"""
 SELECT ?sub ?sub_en ?sub_ja {value_sel} WHERE {{
@@ -112,7 +145,7 @@ SELECT ?sub ?sub_en ?sub_ja {value_sel} WHERE {{
        wikibase:sitelinks ?links .
   FILTER(?links >= {min_links})
   ?sub rdfs:label ?sub_en FILTER(lang(?sub_en) = "en")
-  ?sub rdfs:label ?sub_ja FILTER(lang(?sub_ja) = "ja"){value_bind}
+  ?sub rdfs:label ?sub_ja FILTER(lang(?sub_ja) = "ja"){value_bind}{uniq}
 }}
 LIMIT {limit} OFFSET {offset}
 """
@@ -131,10 +164,10 @@ def clean_number(s):
 
 
 def harvest(name, spec, limit, max_rows, pause):
-    cls, prop, kind, min_links = spec
+    cls, prop, kind, min_links, single = spec
     rows, offset, seen = [], 0, set()
     while len(rows) < max_rows:
-        q = build_query(cls, prop, kind, min_links, limit, offset)
+        q = build_query(cls, prop, kind, min_links, limit, offset, single)
         batch = sparql(q)
         if not batch:
             break
@@ -148,10 +181,24 @@ def harvest(name, spec, limit, max_rows, pause):
             else:
                 raw = b["val_raw"]["value"]
                 if kind == "date":
-                    m = re.match(r"(-?\d{1,4})-", raw)
+                    m = re.match(r"(-?\d{1,5})-", raw)
                     if not m:
                         continue
-                    val_en = val_ja = m.group(1)
+                    y = int(m.group(1))
+                    # A bare "-2531" reads as a negative year; spell out the era.
+                    val_en = f"{-y} BC" if y < 0 else str(y)
+                    val_ja = f"紀元前{-y}年" if y < 0 else f"{y}年"
+                elif kind == "qty":
+                    unit, scale = QTY_UNITS.get(prop, ("", 1.0))
+                    try:
+                        amt = float(raw) * scale
+                    except ValueError:
+                        continue
+                    if amt <= 0:
+                        continue
+                    txt = f"{amt:,.0f}" if amt >= 10 else f"{amt:,.2f}".rstrip("0").rstrip(".")
+                    val_en = f"{txt} {unit}".strip()
+                    val_ja = f"{txt}{unit}".strip()
                 else:
                     val_en = val_ja = clean_number(raw)
             if not (sub_en and sub_ja and val_en and val_ja):

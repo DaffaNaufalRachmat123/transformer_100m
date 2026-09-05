@@ -47,8 +47,11 @@ struct SpecialTokens {
     static constexpr const char* CODE_END   = "<|/code|>";
     static constexpr const char* TRANSLATE  = "<|translate|>";
     static constexpr const char* SUMMARY    = "<|summary|>";
-    static constexpr const char* PHONE_EVENT= "<|phone_event|>";
-    static constexpr const char* APP_USAGE  = "<|app_usage|>";
+    // Slots 9 and 10 held <|phone_event|> and <|app_usage|>, which an EN/JA
+    // model never emits. Reused as reasoning delimiters so "thinking" costs one
+    // token per side instead of the ~6 a literal "<think>" string would take.
+    static constexpr const char* THINK      = "<|think|>";
+    static constexpr const char* THINK_END  = "<|/think|>";
     static constexpr const char* LANG_ID    = "<|lang_id|>";
     static constexpr const char* LANG_EN    = "<|lang_en|>";
     static constexpr const char* LANG_JA    = "<|lang_ja|>";
@@ -59,7 +62,7 @@ struct SpecialTokens {
         return {
             ENDOFTEXT, SYSTEM, USER, ASSISTANT, END,
             CODE, CODE_END, TRANSLATE, SUMMARY,
-            PHONE_EVENT, APP_USAGE,
+            THINK, THINK_END,
             LANG_ID, LANG_EN, LANG_JA, LANG_KO, PAD
         };
     }

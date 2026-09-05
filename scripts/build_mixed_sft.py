@@ -23,14 +23,19 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from audit_sft import audit_row  # noqa: E402  shared so both agree on "bad"
+
 # Family -> source dataset dirs under sft_data/. Listed newest/best first;
 # a family draws from every listed dir, so add a dir to widen coverage.
+# Coding and math use the thinking variants and NOT their plain counterparts:
+# showing the same problem both with and without a reasoning span teaches the
+# model that the span is optional, and it then omits it when it matters.
 SOURCES = {
     "facts": ["sft_facts_expanded", "sft_facts_v11"],
     "translation": ["sft_translation_tri", "sft_translation_bank"],
-    "coding": ["sft_coding_v3", "sft_code_explain", "sft_code_bugfix",
-               "sft_coding_mbpp"],
-    "math": ["sft_math_pot", "sft_math_v2"],
+    "coding": ["sft_think_code"],
+    "math": ["sft_think_math"],
 }
 
 DEFAULT_RATIO = {"facts": 0.35, "translation": 0.35, "coding": 0.20, "math": 0.10}
@@ -51,12 +56,17 @@ def lang_bucket(rec, keep):
     return lang if lang in keep else None
 
 
-def scan(path, keep, cap_per_bucket, rng, seen):
+def scan(path, keep, cap_per_bucket, rng, seen, reject, seen_qa):
     """Reservoir-sample up to cap_per_bucket unique rows per language bucket.
 
     Dedup happens here rather than after quota allocation: the coding and facts
     sources reuse a small task pool across many template variants, so ~70% of a
     naive sample collapses and the family would silently miss its quota.
+
+    Rows are also validated here rather than audited afterwards. A row whose
+    answer is in the wrong language teaches the model to ignore the prompt
+    language, and a question paired with two different answers teaches it that
+    the target is arbitrary; neither can be repaired downstream.
     """
     buckets = defaultdict(list)
     seen_count = defaultdict(int)
@@ -80,7 +90,11 @@ def scan(path, keep, cap_per_bucket, rng, seen):
             h = hashlib.sha1(text.encode("utf-8")).digest()
             if h in seen:
                 continue
-            seen.add(h)
+            problems = audit_row(rec, seen, seen_qa)
+            if problems:
+                for p in problems:
+                    reject[p] += 1
+                continue
             seen_count[b] += 1
             pool = buckets[b]
             if len(pool) < cap_per_bucket:
@@ -93,12 +107,12 @@ def scan(path, keep, cap_per_bucket, rng, seen):
     return buckets
 
 
-def collect(family, dirs, quota, keep, root, rng, seen):
+def collect(family, dirs, quota, keep, root, rng, seen, reject, seen_qa):
     """Gather `quota` unique rows for one family, split evenly across buckets."""
     merged = defaultdict(list)
     for name in dirs:
         for bucket, rows in scan(root / name / "train.jsonl", keep,
-                                 quota, rng, seen).items():
+                                 quota, rng, seen, reject, seen_qa).items():
             merged[bucket].extend(rows)
     if not merged:
         print(f"  [WARN] {family}: no usable rows in {dirs}", file=sys.stderr)
@@ -155,15 +169,20 @@ def main():
     root = Path(a.sft_root)
 
     print(f"[MIX] langs={sorted(keep)} total={a.total} seed={a.seed}")
-    seen = set()
+    seen, seen_qa, reject = set(), {}, Counter()
     per_family = {}
     for family, frac in sorted(ratio.items()):
         quota = int(a.total * frac)
-        got = collect(family, SOURCES[family], quota, keep, root, rng, seen)
+        got = collect(family, SOURCES[family], quota, keep, root, rng,
+                      seen, reject, seen_qa)
         per_family[family] = got
         short = "  SHORT" if len(got) < quota else ""
         print(f"  {family:12s} quota={quota:7d} got={len(got):7d}{short}  "
               f"from {SOURCES[family]}")
+
+    if reject:
+        print(f"[MIX] rejected {sum(reject.values())} rows: "
+              f"{dict(reject.most_common())}")
 
     # A family that ran short silently rewrites the mix, so surface the ceiling
     # the scarcest family imposes on an exactly-proportioned dataset.
