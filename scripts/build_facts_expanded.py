@@ -49,12 +49,23 @@ ATTRS = {
     "planet_star":        ("host star", "主星", "orbital period"),
 }
 
+# Categories whose property is legitimately multi-valued. Their prompts ask for
+# "one of" and their answers assert only that the value is *a* valid one, so a
+# person with five occupations is not taught that exactly one is correct.
+MULTI = {"person_occupation", "person_country", "film_director", "book_author"}
+
 Q_EN = [
     "What is the {attr} of {subj}?",
     "Tell me the {attr} of {subj}.",
     "{subj} — what is its {attr}?",
     "Give the {attr} of {subj}.",
     "Which {attr} does {subj} have?",
+]
+Q_EN_MULTI = [
+    "Name one {attr} of {subj}.",
+    "Give one {attr} of {subj}.",
+    "What is one {attr} of {subj}?",
+    "Tell me one {attr} of {subj}.",
 ]
 Q_EN_CONTRAST = [
     "Give the {attr} of {subj}, not its {other}.",
@@ -65,12 +76,20 @@ A_EN = [
     "For {subj}, the {attr} is {val}.",
     "{subj} has a {attr} of {val}.",
 ]
+A_EN_MULTI = [
+    "One {attr} of {subj} is {val}.",
+    "{subj} has {val} as one {attr}.",
+]
 
 Q_JA = [
     "{subj}の{attr}は何ですか？",
     "{subj}については、{attr}は？",
     "{subj}の{attr}を教えてください。",
     "{subj}の{attr}は？",
+]
+Q_JA_MULTI = [
+    "{subj}の{attr}を一つ挙げてください。",
+    "{subj}の{attr}の一つは何ですか？",
 ]
 Q_JA_CONTRAST = [
     "{subj}の{attr}を教えてください。他の情報は不要です。",
@@ -79,12 +98,16 @@ A_JA = [
     "{subj}の{attr}は{val}です。",
     "{subj}については、{attr}は{val}です。",
 ]
+A_JA_MULTI = [
+    "{subj}の{attr}の一つは{val}です。",
+]
 
 
 def rows_for(rec, rng, per_fact):
     """Render one fact into up to per_fact rows per language."""
     cat = rec["category"]
     attr_en, attr_ja, other = ATTRS[cat]
+    multi = cat in MULTI
     out = []
 
     for lang in ("en", "ja"):
@@ -93,8 +116,12 @@ def rows_for(rec, rng, per_fact):
         if not subj or not val:
             continue
         attr = attr_en if lang == "en" else attr_ja
-        qs = (Q_EN + Q_EN_CONTRAST) if lang == "en" else (Q_JA + Q_JA_CONTRAST)
-        ans = A_EN if lang == "en" else A_JA
+        if lang == "en":
+            qs = Q_EN_MULTI if multi else (Q_EN + Q_EN_CONTRAST)
+            ans = A_EN_MULTI if multi else A_EN
+        else:
+            qs = Q_JA_MULTI if multi else (Q_JA + Q_JA_CONTRAST)
+            ans = A_JA_MULTI if multi else A_JA
         sysmsg = SYS_EN if lang == "en" else SYS_JA
 
         picked = rng.sample(qs, min(per_fact, len(qs)))

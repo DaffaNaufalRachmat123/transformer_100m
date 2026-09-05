@@ -21,3 +21,4 @@ logs/train_bpe_v7.log
 logs/expand_facts.log
 bpe_checkpoints/
 logs/expand_facts_v2.log
+logs/expand_facts_v3.log

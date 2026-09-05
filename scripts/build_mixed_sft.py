@@ -33,7 +33,7 @@ from audit_sft import audit_row  # noqa: E402  shared so both agree on "bad"
 # model that the span is optional, and it then omits it when it matters.
 SOURCES = {
     "facts": ["sft_facts_expanded", "sft_facts_v11"],
-    "translation": ["sft_translation_tri", "sft_translation_bank"],
+    "translation": ["sft_translation_enja", "sft_translation_bank"],
     "coding": ["sft_think_code"],
     "math": ["sft_think_math"],
 }

@@ -127,11 +127,30 @@ def build_humaneval(path):
     return out
 
 
-def to_sft(rec, lang):
+# Rewordings of the same request. The task statement itself is never altered --
+# only how it is introduced -- so the reference solution stays correct while the
+# model stops keying on one fixed opening.
+PHRASINGS_EN = [
+    "{p}",
+    "Write a Python function for this. {p}",
+    "Solve this in Python. {p}",
+    "{p} Give the Python code.",
+]
+PHRASINGS_JA = [
+    "{p}",
+    "Pythonで解いてください。{p}",
+    "{p} Pythonのコードを書いてください。",
+]
+
+
+def to_sft(rec, lang, variant=0):
     system = SYS_JA if lang == "ja" else SYS_EN
-    user = (JA_PREFIX + rec["prompt"]) if lang == "ja" else rec["prompt"]
+    base = (JA_PREFIX + rec["prompt"]) if lang == "ja" else rec["prompt"]
+    forms = PHRASINGS_JA if lang == "ja" else PHRASINGS_EN
+    user = forms[variant % len(forms)].format(p=base)
     body = f"```python\n{rec['code']}\n```"
     return {"task": rec["task"], "lang": lang, "source": rec["source"],
+            "tests": rec.get("tests", ""),
             "text": chat(system, user, body)}
 
 
@@ -162,6 +181,8 @@ def main():
     ap.add_argument("--rl_out", default="rl_data/coding_mbpp.jsonl")
     ap.add_argument("--eval_out", default="eval_data")
     ap.add_argument("--langs", default="en,ja")
+    ap.add_argument("--phrasings", type=int, default=4,
+                    help="prompt rewordings per problem per language")
     ap.add_argument("--no_verify", action="store_true",
                     help="skip executing reference solutions (much faster)")
     ap.add_argument("--seed", type=int, default=1234)
@@ -178,16 +199,20 @@ def main():
     he = build_humaneval(he_path)
 
     sft, rl = [], []
-    for rec in mbpp["train"]:
+    # The validation split trains too: MBPP test (500) and all of HumanEval stay
+    # held out, which is enough of a benchmark without also reserving these 90.
+    for rec in mbpp["train"] + mbpp["valid"]:
         for lang in langs:
-            sft.append(to_sft(rec, lang))
+            for v in range(a.phrasings):
+                sft.append(to_sft(rec, lang, v))
             rl.append(to_rl(rec, lang))
     rng.shuffle(sft)
     rng.shuffle(rl)
 
     sft_dir = ROOT / a.sft_out
     write(sft_dir / "train.jsonl", sft)
-    write(sft_dir / "eval.jsonl", [to_sft(r, langs[0]) for r in mbpp["valid"]])
+    write(sft_dir / "eval.jsonl",
+          [to_sft(r, langs[0]) for r in mbpp["test"][:200]])
     write(ROOT / a.rl_out, rl)
 
     ev = ROOT / a.eval_out

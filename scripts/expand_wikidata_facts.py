@@ -58,8 +58,11 @@ SPECS = {
     "band_origin":       ("wd:Q215380",  "P495",  "item",  20, True),
     # --- people ----------------------------------------------------------
     "person_birthyear":  ("wd:Q5",       "P569",  "date",  45, True),
-    "person_country":    ("wd:Q5",       "P27",   "item",  45, True),
-    "person_occupation": ("wd:Q5",       "P106",  "item",  45, True),
+    # Occupation and citizenship are legitimately multi-valued: most notable
+    # people hold several. Demanding a single value discarded ~90% of them, so
+    # these keep every entity and build_facts_expanded.py asks for "one of".
+    "person_country":    ("wd:Q5",       "P27",   "item",  45, False),
+    "person_occupation": ("wd:Q5",       "P106",  "item",  45, False),
     # --- organisations ---------------------------------------------------
     "university_country":("wd:Q3918",    "P17",   "item",  20, True),
     "company_country":   ("wd:Q4830453", "P17",   "item",  25, True),
@@ -127,25 +130,17 @@ def build_query(cls, prop, kind, min_links, limit, offset, single=True):
         value_bind = f"\n  ?sub wdt:{prop} ?val_raw ."
         value_sel = "?val_raw"
 
-    # Reject entities with more than one value so no arbitrary pick is made.
-    # The count must walk the SAME path the value binding uses: wdt: exposes
-    # only the truthy value, so counting it while reading normalised values
-    # let the Nile through with both 2,850 km and 6,650 km attached.
-    uniq = ""
-    if single:
-        count_path = (f"p:{prop}/psn:{prop} [ wikibase:quantityAmount ?v ]"
-                      if kind == "qty" else f"wdt:{prop} ?v")
-        uniq = (f"\n  {{ SELECT ?sub (COUNT(DISTINCT ?v) AS ?nv) WHERE "
-                f"{{ ?sub wdt:P31 {cls} ; {count_path} }} GROUP BY ?sub }}"
-                f"\n  FILTER(?nv = 1)")
-
+    # Uniqueness is enforced client-side, not with a SPARQL subquery: grouping
+    # over wd:Q5 (~10M humans) exceeds the endpoint's 60s budget and every
+    # person_* category came back HTTP 504. The query already emits one row per
+    # value, so a QID appearing more than once in a page has multiple values.
     return f"""
 SELECT ?sub ?sub_en ?sub_ja {value_sel} WHERE {{
   ?sub wdt:P31 {cls} ;
        wikibase:sitelinks ?links .
   FILTER(?links >= {min_links})
   ?sub rdfs:label ?sub_en FILTER(lang(?sub_en) = "en")
-  ?sub rdfs:label ?sub_ja FILTER(lang(?sub_ja) = "ja"){value_bind}{uniq}
+  ?sub rdfs:label ?sub_ja FILTER(lang(?sub_ja) = "ja"){value_bind}
 }}
 LIMIT {limit} OFFSET {offset}
 """
@@ -166,15 +161,26 @@ def clean_number(s):
 def harvest(name, spec, limit, max_rows, pause):
     cls, prop, kind, min_links, single = spec
     rows, offset, seen = [], 0, set()
+    ambiguous = set()  # QIDs observed carrying more than one value
     while len(rows) < max_rows:
         q = build_query(cls, prop, kind, min_links, limit, offset, single)
         batch = sparql(q)
         if not batch:
             break
+
+        # Group the page by entity first, so a multi-valued entity is dropped
+        # rather than resolved by whichever row happened to arrive first.
+        per_qid = {}
         for b in batch:
-            qid = b["sub"]["value"].rsplit("/", 1)[-1]
-            if qid in seen:
+            per_qid.setdefault(b["sub"]["value"].rsplit("/", 1)[-1], []).append(b)
+
+        for qid, hits in per_qid.items():
+            if qid in seen or qid in ambiguous:
                 continue
+            if single and len(hits) > 1:
+                ambiguous.add(qid)
+                continue
+            b = hits[0]
             sub_en, sub_ja = norm(b["sub_en"]["value"]), norm(b["sub_ja"]["value"])
             if kind == "item":
                 val_en, val_ja = norm(b["val_en"]["value"]), norm(b["val_ja"]["value"])
@@ -196,7 +202,8 @@ def harvest(name, spec, limit, max_rows, pause):
                         continue
                     if amt <= 0:
                         continue
-                    txt = f"{amt:,.0f}" if amt >= 10 else f"{amt:,.2f}".rstrip("0").rstrip(".")
+                    txt = (f"{amt:,.0f}" if amt >= 10
+                           else f"{amt:,.2f}".rstrip("0").rstrip("."))
                     val_en = f"{txt} {unit}".strip()
                     val_ja = f"{txt}{unit}".strip()
                 else:
