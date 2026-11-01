@@ -72,6 +72,9 @@ static void print_usage(const char* prog) {
         << "  --rep_penalty F  repetition penalty; >1 penalises repeated tokens (default: 1.3)\n"
         << "  --rep_window N   look-back window for rep penalty (default: 64)\n"
         << "  --greedy         greedy decoding (temperature=0, rep penalty still applies)\n"
+        << "  --hard_block N   ban non-special tokens seen >= N times in the window, and the\n"
+        << "                   previous token (default: 0 = off; hurts legitimate repeats)\n"
+        << "  --no_bos         do not prepend <|endoftext|> (training always does)\n"
         << "  --show_probs     show top-k token probabilities at each generation step\n"
         << "  --show_probs_topk N  how many top tokens to show (default: 5)\n"
         << "\n"
@@ -96,6 +99,15 @@ static void print_usage(const char* prog) {
 }
 
 static bool g_eot_marker = false;  // --eot_marker: print <<<EOT>>> after each generation
+// --hard_block N: ban any non-special token seen >= N times in the repetition
+// window, and always ban the token generated one step ago. 0 = off (default).
+// This is a blunt anti-loop hack for under-trained models; it also bans
+// legitimate repeats ("no, no", "bye bye", ああ, repeated digits), so it must be
+// opt-in and is never wanted for translation.
+static int  g_hard_block = 0;
+// BOS: training always prepends <|endoftext|> (encode(text, true, true)), so the
+// prompt must start with it too. --no_bos turns that off.
+static bool g_add_bos = true;
 
 static void stream_generate(
         Transformer&          model,
@@ -121,11 +133,6 @@ static void stream_generate(
     std::vector<uint32_t> recent;   // sliding window for rep penalty
     auto t_start = std::chrono::high_resolution_clock::now();
 
-    // Hard-block threshold: if a non-special token appears >= this many times
-    // in the window, zero out its probability entirely.
-    // This handles degenerate distributions from under-trained models.
-    const int HARD_BLOCK_N = 3;
-
     for (int step = 0; step < gcfg.max_new_tokens; ++step) {
         uint32_t next_tok;
 
@@ -143,14 +150,15 @@ static void stream_generate(
             }
         }
 
-        // Hard-block: zero out any non-special token seen >= HARD_BLOCK_N times
-        for (auto& [tok, cnt] : freq) {
-            if (cnt >= HARD_BLOCK_N && tok >= 16 && tok < (uint32_t)logits.size())
-                logits[tok] = -1e30f;
+        // Hard-block (opt-in, --hard_block N): see g_hard_block.
+        if (g_hard_block > 0) {
+            for (auto& [tok, cnt] : freq) {
+                if (cnt >= g_hard_block && tok >= 16 && tok < (uint32_t)logits.size())
+                    logits[tok] = -1e30f;
+            }
+            if (!recent.empty() && recent.back() >= 16 && recent.back() < (uint32_t)logits.size())
+                logits[recent.back()] = -1e30f;
         }
-        // ALWAYS block the last generated token to force at least some diversity
-        if (!recent.empty() && recent.back() >= 16 && recent.back() < (uint32_t)logits.size())
-            logits[recent.back()] = -1e30f;
 
         if (gcfg.temperature <= 0.0f) {
             // Greedy on penalized logits
@@ -206,18 +214,19 @@ static void stream_generate(
 
             // Top-K
 
-            // Hard-block: zero out any non-special token seen >= HARD_BLOCK_N times
+            // Hard-block (opt-in, --hard_block N): see g_hard_block.
             bool any_blocked = false;
-            for (auto& [tok, cnt] : freq) {
-                if (cnt >= HARD_BLOCK_N && tok >= 16 && tok < (uint32_t)probs.size()) {
-                    probs[tok] = 0.0f;
+            if (g_hard_block > 0) {
+                for (auto& [tok, cnt] : freq) {
+                    if (cnt >= g_hard_block && tok >= 16 && tok < (uint32_t)probs.size()) {
+                        probs[tok] = 0.0f;
+                        any_blocked = true;
+                    }
+                }
+                if (!recent.empty() && recent.back() >= 16 && recent.back() < (uint32_t)probs.size()) {
+                    probs[recent.back()] = 0.0f;
                     any_blocked = true;
                 }
-            }
-            // ALWAYS block the last generated token to force at least some diversity
-            if (!recent.empty() && recent.back() >= 16 && recent.back() < (uint32_t)probs.size()) {
-                probs[recent.back()] = 0.0f;
-                any_blocked = true;
             }
             if (any_blocked) {
                 float s = 0; for (float p : probs) s += p;
@@ -359,6 +368,8 @@ int main(int argc, char** argv) {
         else if (key == "--chat_format") chat_format = true;
         else if (key == "--stdin")    use_stdin = true;
         else if (key == "--eot_marker") g_eot_marker = true;
+        else if (key == "--hard_block"  && i+1 < argc) g_hard_block = std::stoi(argv[++i]);
+        else if (key == "--no_bos")     g_add_bos = false;
     }
 
     if (show_help) { print_usage(argv[0]); return 0; }
@@ -392,10 +403,19 @@ int main(int argc, char** argv) {
               << " d=" << cfg.d_model << " L=" << cfg.n_layers << ")\n\n";
 
     // ---- Helper: build prompt ids from text --------------------------------
+    // Training wraps every sample as [BOS ... <|end|>] (encode(text, true, true)),
+    // so inference has to start from BOS too. Skip it when the prompt text
+    // already begins with <|endoftext|> so it is never doubled.
+    const uint32_t bos_id = enc.special_id("<|endoftext|>");
+    auto with_bos = [&](std::vector<uint32_t> ids) {
+        if (g_add_bos && bos_id != UINT32_MAX && (ids.empty() || ids.front() != bos_id))
+            ids.insert(ids.begin(), bos_id);
+        return ids;
+    };
     auto build_prompt_ids = [&](const std::string& user_input) -> std::vector<uint32_t> {
         if (!chat_format) {
             // Raw encode — user controls format manually
-            return enc.encode(user_input, false, false);
+            return with_bos(enc.encode(user_input, false, false));
         }
         // Chat format: <|system|>SYS<|user|>USER<|assistant|>
         std::string full;
@@ -407,7 +427,7 @@ int main(int argc, char** argv) {
         full += user_input;
         if (ast_id != UINT32_MAX)
             full += "<|assistant|>";
-        return enc.encode(full, false, false);
+        return with_bos(enc.encode(full, false, false));
     };
 
     // ---- Mode: single --prompt ---------------------------------------------
