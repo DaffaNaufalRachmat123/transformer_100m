@@ -209,6 +209,32 @@ static std::string extract_json_string(const std::string& line, const std::strin
     return result;
 }
 
+// ─── Loss mask for chat samples ─────────────────────────────────────────────
+// mask[i] weights the loss of predicting tokens[i+1] from tokens[i] (the
+// targets are the inputs shifted left by one, see the batch builders below).
+//   * mask must be 1 at the <|assistant|> position itself: its target is the
+//     FIRST response token. Leaving it at 0 means the first token of every
+//     answer is never trained, and for translation that token decides the
+//     whole sentence.
+//   * "when to stop" is learned at the token BEFORE <|end|> (its target is
+//     <|end|>), which the in_assistant branch already covers. The <|end|>
+//     position itself has nothing meaningful to predict, so it stays 0.
+static std::vector<float> build_assistant_mask(const std::vector<int>& tokens) {
+    std::vector<float> mask(tokens.size(), 0.0f);
+    bool in_assistant = false;
+    for (size_t i = 0; i < tokens.size(); i++) {
+        if (tokens[i] == TOK_ASSISTANT) {
+            in_assistant = true;
+            mask[i] = 1.0f;
+        } else if (tokens[i] == TOK_END) {
+            in_assistant = false;
+        } else if (in_assistant) {
+            mask[i] = 1.0f;
+        }
+    }
+    return mask;
+}
+
 // ─── SFT Data Loading (JSONL chat format) ──────────────────────────────────
 struct SFTSample {
     std::vector<int> tokens;
@@ -249,25 +275,16 @@ std::vector<SFTSample> load_sft_data(const std::string& dir, BPEEncoder& tok, in
             }
             if (text.empty()) continue;
 
-            auto ids = tok.encode(text, true, true);
+            // The row text already ends with <|end|>; asking encode() to append
+            // another one trains a useless "<|end|> -> <|end|>" target.
+            const bool has_end = text.size() >= 7 &&
+                text.compare(text.size() - 7, 7, SpecialTokens::END) == 0;
+            auto ids = tok.encode(text, true, !has_end);
             if ((int)ids.size() > max_seq) ids.resize(max_seq);
 
             SFTSample s;
             s.tokens = std::vector<int>(ids.begin(), ids.end());
-            s.loss_mask.resize(s.tokens.size(), 0.0f);
-
-            // Mask: only compute loss on assistant response tokens.
-            // Mask <|assistant|> so model learns to predict the first response token.
-            // Mask <|end|> so model learns when to stop generating.
-            bool in_assistant = false;
-            for (size_t i = 0; i < s.tokens.size(); i++) {
-                if (s.tokens[i] == TOK_ASSISTANT) in_assistant = true;
-                else if (s.tokens[i] == TOK_END) {
-                    if (in_assistant) s.loss_mask[i] = 1.0f;
-                    in_assistant = false;
-                }
-                if (in_assistant && s.tokens[i] != TOK_ASSISTANT) s.loss_mask[i] = 1.0f;
-            }
+            s.loss_mask = build_assistant_mask(s.tokens);
             samples.push_back(std::move(s));
         }
     }
@@ -301,20 +318,14 @@ std::vector<DPOSample> load_dpo_data(const std::string& dir, BPEEncoder& tok, in
             std::string chosen_full = prefix + chosen_txt + "<|end|>";
             std::string rejected_full = prefix + rejected_txt + "<|end|>";
 
-            auto chosen_ids = tok.encode(chosen_full, true, true);
-            auto rejected_ids = tok.encode(rejected_full, true, true);
+            // chosen_full / rejected_full already end with <|end|>.
+            auto chosen_ids = tok.encode(chosen_full, true, false);
+            auto rejected_ids = tok.encode(rejected_full, true, false);
             if ((int)chosen_ids.size() > max_seq) chosen_ids.resize(max_seq);
             if ((int)rejected_ids.size() > max_seq) rejected_ids.resize(max_seq);
 
             auto build_mask = [&](const std::vector<TokenID>& ids) {
-                std::vector<float> mask(ids.size(), 0.0f);
-                bool in_assistant = false;
-                for (size_t i = 0; i < ids.size(); i++) {
-                    if ((int)ids[i] == TOK_ASSISTANT) in_assistant = true;
-                    else if ((int)ids[i] == TOK_END) { if (in_assistant) mask[i] = 1.0f; in_assistant = false; }
-                    if (in_assistant && (int)ids[i] != TOK_ASSISTANT) mask[i] = 1.0f;
-                }
-                return mask;
+                return build_assistant_mask(std::vector<int>(ids.begin(), ids.end()));
             };
 
             DPOSample s;
