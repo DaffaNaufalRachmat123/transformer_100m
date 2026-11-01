@@ -19,6 +19,7 @@ from collections import Counter, defaultdict
 import json
 import re
 import random
+import shlex
 import subprocess
 import sys
 import unicodedata
@@ -419,11 +420,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="translation_resources/ckpt_sft_final.safetensors")
     ap.add_argument("--config", default="config_pretrain.json")
-    ap.add_argument("--vocab", default="vocab_7")
+    ap.add_argument("--vocab", default="vocab_9")
     ap.add_argument("--eval", default="sft_data/sft_facts_large/train.jsonl")
     ap.add_argument("--max_test", type=int, default=200)
     ap.add_argument("--max_tokens", type=int, default=30)
     ap.add_argument("--infer", default="build_infer/infer")
+    ap.add_argument("--infer_flags", default="--rep_penalty 1.0",
+                    help="extra flags passed to infer. Default turns the repetition "
+                         "penalty off so scores measure the model, not the sampler "
+                         "(e.g. \"--rep_penalty 1.3 --hard_block 3\" to reproduce old runs, "
+                         "\"--no_bos\" to test without BOS)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--sample_unit", choices=["row", "fact"], default="row",
                     help="row = random prompt rows, fact = one prompt per unique fact_id per language")
@@ -465,7 +471,7 @@ def main():
     proc = subprocess.run(
         [str(infer), "--model", str(ROOT/args.model), "--config", str(ROOT/args.config),
          "--vocab", str(ROOT/args.vocab), "--greedy", "--max_tokens", str(args.max_tokens),
-         "--stdin"],
+         "--stdin", *shlex.split(args.infer_flags)],
         input=("\n".join(prompts) + "\n").encode("utf-8"),
         capture_output=True, timeout=3600,
     )

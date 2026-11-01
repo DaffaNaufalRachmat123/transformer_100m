@@ -20,6 +20,7 @@ import argparse
 import json
 import random
 import re
+import shlex
 import subprocess
 import sys
 import unicodedata
@@ -88,12 +89,12 @@ def build_prompt(system: str, user: str) -> str:
 
 
 def run_infer(binary: Path, model: Path, config: Path, vocab: Path,
-              prompts, max_tokens: int):
+              prompts, max_tokens: int, extra_flags=("--rep_penalty", "1.0")):
     """Feed all prompts through one infer process; return list of generations."""
     proc = subprocess.run(
         [str(binary), "--model", str(model), "--config", str(config),
          "--vocab", str(vocab), "--greedy", "--max_tokens", str(max_tokens),
-         "--stdin", "--eot_marker"],
+         "--stdin", "--eot_marker", *extra_flags],
         input=("\n".join(prompts) + "\n").encode("utf-8"),
         capture_output=True, timeout=7200,
     )
@@ -119,7 +120,8 @@ def run_gguf(runner: Path, model: Path, vocab: Path, prompts,
     from bpe_reference import BPEReference
 
     enc = BPEReference(vocab)
-    lines = [" ".join(str(i) for i in enc.encode(p)) for p in prompts]
+    # training prepends BOS to every sample, and infer does by default.
+    lines = [" ".join(str(i) for i in enc.encode(p, add_bos=True)) for p in prompts]
     proc = subprocess.run(
         [str(runner), "--model", str(model), "--n-predict", str(max_tokens),
          "--ctx", str(n_ctx), "--threads", str(threads), "--eot-marker"],
@@ -206,8 +208,13 @@ def main():
                     help="'infer' = original C++ engine, 'gguf' = llama.cpp")
     ap.add_argument("--model", default="translation_resources/facts/ckpt_sft_final.safetensors")
     ap.add_argument("--config", default="config_204m.json")
-    ap.add_argument("--vocab", default="vocab_7")
+    ap.add_argument("--vocab", default="vocab_9")
     ap.add_argument("--infer", default="build_infer/infer")
+    ap.add_argument("--infer_flags", default="--rep_penalty 1.0",
+                    help="extra flags passed to infer. Default turns the repetition "
+                         "penalty off so scores measure the model, not the sampler "
+                         "(e.g. \"--rep_penalty 1.3 --hard_block 3\" to reproduce old runs, "
+                         "\"--no_bos\" to test without BOS)")
     ap.add_argument("--runner", default="build_infer/llama_runner")
     ap.add_argument("--ctx", type=int, default=512)
     ap.add_argument("--threads", type=int, default=4)
@@ -253,7 +260,8 @@ def main():
         outs = run_gguf(binary, model, vocab, prompts, args.max_tokens,
                         args.ctx, args.threads)
     else:
-        outs = run_infer(binary, model, config, vocab, prompts, args.max_tokens)
+        outs = run_infer(binary, model, config, vocab, prompts, args.max_tokens,
+                         shlex.split(args.infer_flags))
 
     i = 0
     for r in facts_en + facts_ja + tr_enja + tr_jaen:

@@ -47,8 +47,10 @@ def main():
     ap.add_argument("mode", choices=sorted(MODES))
     ap.add_argument("text", nargs="*", help="input text (omit with --repl/--file)")
     ap.add_argument("--model", default="", help="override the .gguf model")
-    ap.add_argument("--vocab", default="vocab_7")
+    ap.add_argument("--vocab", default="vocab_9")
     ap.add_argument("--runner", default="build_infer/llama_runner")
+    ap.add_argument("--no_bos", action="store_true",
+                    help="do not prepend <|endoftext|> (training always does)")
     ap.add_argument("--n-predict", type=int, default=48)
     ap.add_argument("--ctx", type=int, default=512)
     ap.add_argument("--threads", type=int, default=4)
@@ -83,7 +85,7 @@ def main():
         if args.show_prompt:
             for p in prompts:
                 print(f"  prompt: {p}", file=sys.stderr)
-        ids = "\n".join(" ".join(str(i) for i in enc.encode(p)) for p in prompts)
+        ids = "\n".join(" ".join(str(i) for i in enc.encode(p, add_bos=not args.no_bos)) for p in prompts)
         proc = subprocess.run(cmd, input=(ids + "\n").encode("utf-8"),
                               capture_output=True)
         outs = proc.stdout.decode("utf-8", "replace").split(EOT)

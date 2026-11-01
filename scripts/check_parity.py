@@ -89,7 +89,7 @@ def main():
     ap.add_argument("--safetensors", default="translation_resources/facts/ckpt_sft_final.safetensors")
     ap.add_argument("--gguf", default="gguf/trilingual-204m-facts-f16.gguf")
     ap.add_argument("--config", default="config_204m.json")
-    ap.add_argument("--vocab", default="vocab_7")
+    ap.add_argument("--vocab", default="vocab_9")
     ap.add_argument("--infer", default="build_infer/infer")
     ap.add_argument("--runner", default="build_infer/llama_runner")
     ap.add_argument("--n", type=int, default=200)
@@ -110,7 +110,8 @@ def main():
                "--greedy", "--max_tokens", "1", "--stdin", "--eot_marker"],
               "\n".join(prompts) + "\n")
 
-    ids = [" ".join(str(i) for i in enc.encode(p)) for p in prompts]
+    # infer prepends BOS by default, so the GGUF side has to as well.
+    ids = [" ".join(str(i) for i in enc.encode(p, add_bos=True)) for p in prompts]
     got = run([str(ROOT / args.runner),
                "--model", str(ROOT / args.gguf),
                "--n-predict", "1", "--ctx", "1024", "--threads", "4", "-ngl", "0",

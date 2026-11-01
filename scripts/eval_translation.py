@@ -26,6 +26,7 @@ import argparse
 import json
 import math
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -108,7 +109,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="translation_resources/ckpt_sft_final.safetensors")
     ap.add_argument("--config", default="config_pretrain.json")
-    ap.add_argument("--vocab", default="vocab_7")
+    ap.add_argument("--vocab", default="vocab_9")
     ap.add_argument("--eval", default="sft_data/sft_translation_tri/eval.jsonl")
     ap.add_argument("--bank_eval", default="sft_data/sft_translation_bank/eval.jsonl")
     ap.add_argument("--dedup_train", default="")
@@ -118,6 +119,11 @@ def main():
     ap.add_argument("--max_bank", type=int, default=200, help="per direction (bank)")
     ap.add_argument("--max_tokens", type=int, default=60)
     ap.add_argument("--infer", default="build_infer/infer")
+    ap.add_argument("--infer_flags", default="--rep_penalty 1.0",
+                    help="extra flags passed to infer. Default turns the repetition "
+                         "penalty off so scores measure the model, not the sampler "
+                         "(e.g. \"--rep_penalty 1.3 --hard_block 3\" to reproduce old runs, "
+                         "\"--no_bos\" to test without BOS)")
     ap.add_argument("--out", default="results/translation_eval_v2.json")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
@@ -187,7 +193,7 @@ def main():
     proc = subprocess.run(
         [str(infer), "--model", str(ROOT / args.model), "--config", str(ROOT / args.config),
          "--vocab", str(ROOT / args.vocab), "--greedy", "--max_tokens", str(args.max_tokens),
-         "--stdin", "--eot_marker"],
+         "--stdin", "--eot_marker", *shlex.split(args.infer_flags)],
         input=("\n".join(prompts) + "\n").encode("utf-8"),
         capture_output=True, timeout=7200,
     )
