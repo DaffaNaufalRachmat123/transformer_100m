@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     }
 
     std::string corpus = (argc > 1) ? argv[1] : "data/corpus_pretrain_v8";
-    std::string vocab  = (argc > 2) ? argv[2] : "vocab_7";
+    std::string vocab  = (argc > 2) ? argv[2] : "vocab_9";
     uint32_t seq_len   = (argc > 3) ? (uint32_t)std::atoi(argv[3]) : 512;
     uint32_t batch     = (argc > 4) ? (uint32_t)std::atoi(argv[4]) : 4;
 

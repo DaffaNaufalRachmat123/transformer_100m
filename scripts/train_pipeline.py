@@ -266,8 +266,8 @@ def main():
     parser.add_argument("--work_dir", default="",
                         help="Working directory (auto-detected if empty)")
     parser.add_argument("--checkpoint_dir", default="checkpoints")
-    parser.add_argument("--vocab_dir", default="vocab_7")
-    parser.add_argument("--bpe", default="bpe_v7.bin")
+    parser.add_argument("--vocab_dir", default="vocab_9")
+    parser.add_argument("--bpe", default="bpe_v9.bin")
     parser.add_argument("--log_every", type=int, default=5)
     parser.add_argument("--upload_every", type=int, default=0)
     parser.add_argument("--upload_script", default="")

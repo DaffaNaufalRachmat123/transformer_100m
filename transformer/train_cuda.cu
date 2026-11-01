@@ -83,7 +83,7 @@ static void sync_arch() {
 // ─── CLI config ────────────────────────────────────────────────────────────
 static std::string g_data_dir       = "data/corpus_pretrain_v8";
 static std::string g_checkpoint_dir = "checkpoints";
-static std::string g_vocab_dir      = "vocab_7";
+static std::string g_vocab_dir      = "vocab_9";
 static std::string g_bpe_path       = "";  // empty = use vocab_dir text format
 static std::string g_optimizer      = "adamw";
 static uint64_t g_max_tokens        = 2'000'000'000ULL;
@@ -762,7 +762,7 @@ int main(int argc, char** argv) {
             printf("  --data_dir <path>         Corpus directory [data/corpus_pretrain_v8]\n");
             printf("  --checkpoint_dir <path>   Checkpoint output [checkpoints]\n");
             printf("  --arch_config <path>      Architecture JSON [built-in 492M]\n");
-            printf("  --vocab_dir <path>        Vocab directory [vocab_7]\n");
+            printf("  --vocab_dir <path>        Vocab directory [vocab_9]\n");
             printf("  --bpe <path>              BPE binary model path (optional)\n");
             printf("  --max_tokens <N>          Token budget [9B]\n");
             printf("  --batch_size <N>          Batch size per GPU [8]\n");

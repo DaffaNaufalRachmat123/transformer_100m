@@ -54,7 +54,7 @@ MAX_WORD_BYTES = 512                       # C++: kMaxWordBytes (chunk size)
 
 
 class BPEReference:
-    def __init__(self, vocab_dir=ROOT / "vocab_7"):
+    def __init__(self, vocab_dir=ROOT / "vocab_9"):
         vocab_dir = Path(vocab_dir)
         raw = (vocab_dir / "vocab.txt").read_text(encoding="utf-8")
         self.tokens = raw.split("\n")
@@ -245,7 +245,7 @@ class BPEReference:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--vocab", default=str(ROOT / "vocab_7"))
+    ap.add_argument("--vocab", default=str(ROOT / "vocab_9"))
     ap.add_argument("--text", default="")
     ap.add_argument("--stdin", action="store_true",
                     help="read one text per line, print space-separated ids")

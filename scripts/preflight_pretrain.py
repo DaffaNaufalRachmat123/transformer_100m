@@ -97,8 +97,8 @@ def load_merges_from_bin(path: Path):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--vocab_dir", default="vocab_7")
-    ap.add_argument("--bpe", default="bpe_v7.bin")
+    ap.add_argument("--vocab_dir", default="vocab_9")
+    ap.add_argument("--bpe", default="bpe_v9.bin")
     ap.add_argument("--data_dir", default="data/corpus_pretrain_v8")
     ap.add_argument("--max_seq", type=int, default=0,
                     help="if set, also report the token budget per step")

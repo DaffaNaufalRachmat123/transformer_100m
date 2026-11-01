@@ -93,7 +93,7 @@ static std::string g_checkpoint_dir   = "checkpoints";
 static std::string g_base_model       = "checkpoints/ckpt_pretrain_final.safetensors";
 static std::string g_ref_model        = "";
 static std::string g_bpe_path         = "";
-static std::string g_vocab_dir        = "vocab_6";
+static std::string g_vocab_dir        = "vocab_9";
 static int    g_max_steps             = -1;
 static int    g_max_seq               = 512;
 static int    g_batch_size            = 4;
@@ -878,7 +878,7 @@ int main(int argc, char** argv) {
                 "[ERR] Tokenizer special IDs invalid: bos=%d eos=%d pad=%d system=%d user=%d assistant=%d end=%d\n",
                 TOK_BOS, TOK_EOS, TOK_PAD, TOK_SYSTEM, TOK_USER, TOK_ASSISTANT, TOK_END);
         fprintf(stderr,
-                "[ERR] Ensure the runtime can load the matching bpe_v8.bin or vocab_8 files before Stage %d.\n",
+                "[ERR] Ensure the runtime can load the matching bpe_v9.bin or vocab_9 files before Stage %d.\n",
                 g_stage);
         return 1;
     }
