@@ -251,6 +251,17 @@ static inline void launch_count_nan_inf(const __half* d, unsigned int* nan_out,
     count_nan_inf_kernel<<<grid, block, 0, stream>>>(d, nan_out, inf_out, n);
 }
 
+// Same, but without zeroing the counters, so one pair of counters can span all
+// 218 gradient tensors in a step. Caller memsets once up front.
+static inline void launch_count_nan_inf_accum(const __half* d, unsigned int* nan_out,
+                                              unsigned int* inf_out, size_t n,
+                                              cudaStream_t stream) {
+    if (n == 0) return;
+    int block = 256;
+    int grid = (int)((n + block - 1) / block);
+    count_nan_inf_kernel<<<grid, block, 0, stream>>>(d, nan_out, inf_out, n);
+}
+
 // FP32 atomicMin/atomicMax (not natively supported on sm_75; must be defined
 // before min_max_fp16_kernel which calls them).
 __device__ inline void atomicMin_f32(float* addr, float val) {

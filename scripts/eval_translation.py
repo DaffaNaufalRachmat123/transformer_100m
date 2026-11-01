@@ -108,7 +108,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="translation_resources/ckpt_sft_final.safetensors")
     ap.add_argument("--config", default="config_pretrain.json")
-    ap.add_argument("--vocab", default="vocab_6")
+    ap.add_argument("--vocab", default="vocab_7")
     ap.add_argument("--eval", default="sft_data/sft_translation_tri/eval.jsonl")
     ap.add_argument("--bank_eval", default="sft_data/sft_translation_bank/eval.jsonl")
     ap.add_argument("--dedup_train", default="")

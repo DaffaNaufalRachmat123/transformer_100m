@@ -100,6 +100,17 @@ target_link_libraries(grad_check PRIVATE
     CUDA::cudart
 )
 
+# ─── Data-path harness (opt-in, no CUDA) ───────────────────────────────────
+#   cmake --build build --target dataset_check
+#   ./build/dataset_check data/corpus_pretrain_v8 vocab_7 512 4
+add_executable(dataset_check EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/dataset_check.cpp
+)
+target_link_libraries(dataset_check PRIVATE
+    transformer_core
+    bpe_tokenizer
+)
+
 # ─── NCCL for DDP ──────────────────────────────────────────────────────────
 if(USE_DDP)
     find_library(NCCL_LIB nccl

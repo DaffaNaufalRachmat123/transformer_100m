@@ -5,15 +5,47 @@
 // regenerated. Needed for the 492M spec, which moves to a 49152-token EN/JA/code
 // vocab (vocab_6 is 65536 and carries Indonesian/Korean merges we no longer use).
 //
-// Per-source byte budgets matter: BPE allocates merges in proportion to what it
-// sees, so the sample mix should track the pretraining mix. Japanese needs fewer
-// bytes for the same token share because CJK is ~2 bytes/token against ~4 for
-// English prose.
+// SAMPLE MIX. BPE allocates merges in proportion to what it sees, so the sample
+// has to track the pretraining TOKEN mix, not a byte intuition. Measured on
+// vocab_7: EN 3.53 bytes/token, JA 3.18, code 3.64, math 3.70 — the four are
+// close, so bytes are a fair proxy for tokens here.
 //
-//   train_bpe --out_dir vocab_7 --vocab_size 49152 \
-//             --corpus data/corpus_final/english:2200 \
-//             --corpus data/corpus_final/japanese:900 \
-//             --corpus data/corpus_1b/code:500
+// Japanese then gets an extra share on top of its token share. vocab_7 was
+// trained on EN 2200 : JA 900 : code 500 MB and the result is lopsided:
+//
+//     latin                27,731 slots (56.4%)
+//     partial-UTF8 frags   11,018 slots (22.4%)
+//     japanese/CJK          8,433 slots (17.2%)
+//
+// 17.2% of the vocab for what will be ~35% of the training tokens (30% from
+// japanese/ plus roughly half of the 11% mixed/ bucket). The cost is concrete:
+// 1,383 of the 2,136 most frequent kanji are NOT single tokens, and katakana
+// loanwords get no merges at all (コンピュータ = 6 tokens for 6 characters).
+// Japanese therefore lands at 1.16 characters/token against English's 4.15.
+//
+// Recommended mix for the corpus_pretrain_v8 layout (~5 GB sample):
+//
+//   train_bpe --out_dir vocab_8 --vocab_size 49152 --min_freq 15 \
+//             --corpus data/corpus_pretrain_v8/japanese:2000 \
+//             --corpus data/corpus_pretrain_v8/english:1300 \
+//             --corpus data/corpus_pretrain_v8/code:1100 \
+//             --corpus data/corpus_pretrain_v8/math:600 \
+//             --binary bpe_v8.bin --checkpoint bpe_checkpoints/bpe_v8_ckpt.bin
+//
+// Japanese takes 40% of the BPE sample against a ~35% token share. That
+// over-weighting is deliberate: Japanese needs more vocabulary per token than
+// English because it has a 6,229-character inventory to cover (2,531 kanji
+// appear at least 100 times), whereas English reuses 26 letters.
+//
+// mixed/ is deliberately NOT sampled. It holds the fact-injection corpus, whose
+// 4,580 tier-1 facts are repeated 1,000 times each — feeding that to a
+// frequency-driven merge learner would spend vocabulary slots on template
+// phrases like "is the capital of" instead of on language.
+//
+// Feed it the corpus_pretrain_v8 tree, not the raw sources: load_corpus() keeps
+// newlines and splits documents on the "<|endoftext|>" separator line, which is
+// what lets "\n", "\n\n" and "\n    " become merges. A 4000-token trial on that
+// layout learned 42 newline-bearing tokens; vocab_7 has exactly 1.
 // =============================================================================
 #include <algorithm>
 #include <chrono>

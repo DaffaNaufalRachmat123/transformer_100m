@@ -53,16 +53,21 @@ inline Language lang_from_dirname(const std::string& name) {
 }
 
 // Per-phase language sampling weights.
-// Three supported corpus layouts:
-//   - Bilingual (EN+JA only):               EN 0.55 / JA 0.45 (original).
+// Four supported corpus layouts:
+//   - Bilingual (EN+JA only):               EN 0.55 / JA 0.45.
 //   - Trilingual (indonesian/ present):     EN 0.30 / JA 0.25 / ID 0.45.
-//   - Six-bucket 1B build (code/ + math/ present):
+//   - Quad EN/JA/Code/Math (no indonesian/):
+//     JA 0.30 / EN 0.26 / Code 0.19 / Math 0.14 / Mixed 0.11 — the layout
+//     produced by scripts/build_pretrain_corpus.py. Japanese leads because it
+//     is the least compressible: the tokenizer averages 1.16 characters per
+//     token on Japanese against 4.15 on English, so an equal token count buys
+//     roughly a third as much Japanese text. Mixed carries fact injection and
+//     the EN<->JA parallel pairs, which is the only place those capabilities
+//     are trained, so it must not default to zero.
+//   - Six-bucket 1B build (code/ + math/ + indonesian/):
 //     EN 0.35 / JA 0.25 / ID 0.20 / Code 0.09 / Math 0.03 / Mixed 0.08.
-//     Mixed carries fact-injection + parallel pairs, so it gets real weight.
-// Six-bucket weights are overridable via environment variables (read once
-// per process; this is a cold path) — used for smoke runs and ablations,
-// e.g. zero out the code bucket when running on the newline-stripping
-// vocab_6 tokenizer, or boost mixed for low-token-budget smokes:
+// Weights are overridable via environment variables (read once per process;
+// this is a cold path) — used for smoke runs and ablations:
 //   TW_W_EN, TW_W_JA, TW_W_ID, TW_W_CODE, TW_W_MATH, TW_W_MIXED
 // The caller passes which optional buckets exist so the same binary can
 // serve every corpus layout without recompiling.
@@ -71,18 +76,23 @@ inline float lang_sample_weight(Language l, int phase = 0,
                                 bool has_code_math = false) {
     (void)phase;  // single-phase, no curriculum
     if (has_code_math) {
-        struct SixBucketWeights {
+        struct BucketWeights {
             float en, ja, id, code, math, mixed;
             static float env_or(const char* key, float def) {
                 const char* v = std::getenv(key);
                 return v ? (float)std::atof(v) : def;
             }
-            SixBucketWeights()
-                : en(env_or("TW_W_EN", 0.35f)), ja(env_or("TW_W_JA", 0.25f)),
-                  id(env_or("TW_W_ID", 0.20f)), code(env_or("TW_W_CODE", 0.09f)),
-                  math(env_or("TW_W_MATH", 0.03f)), mixed(env_or("TW_W_MIXED", 0.08f)) {}
+            explicit BucketWeights(bool with_id)
+                : en(env_or("TW_W_EN",   with_id ? 0.35f : 0.27f)),
+                  ja(env_or("TW_W_JA",   with_id ? 0.25f : 0.30f)),
+                  id(env_or("TW_W_ID",   with_id ? 0.20f : 0.00f)),
+                  code(env_or("TW_W_CODE", with_id ? 0.09f : 0.19f)),
+                  math(env_or("TW_W_MATH", with_id ? 0.03f : 0.15f)),
+                  mixed(env_or("TW_W_MIXED", with_id ? 0.08f : 0.09f)) {}
         };
-        static const SixBucketWeights W;
+        static const BucketWeights W6(true);
+        static const BucketWeights W4(false);
+        const BucketWeights& W = has_indonesian ? W6 : W4;
         switch (l) {
             case Language::English:    return W.en;
             case Language::Japanese:   return W.ja;
@@ -116,6 +126,10 @@ struct CorpusFile {
     Language    lang;
     float       weight;
     uint64_t    byte_size;
+    // True when the file uses a document-separator line (see
+    // PretrainDatasetConfig::doc_separator). Detected once in discover_files().
+    // False means "one document per line" (legacy corpora).
+    bool        doc_mode = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -144,6 +158,20 @@ struct PretrainDatasetConfig {
     uint32_t    shard_tokens    = 1 << 20;    // 1M tokens per shard
     uint64_t    seed            = 42;
     bool        weighted_sampling = true;     // follow lang proportions
+
+    // A line equal to this marks the end of a document. Corpora written by
+    // scripts/build_pretrain_corpus.py use it so that multi-line documents
+    // (source files, proofs, articles) are tokenized as ONE document with
+    // their newlines intact. Files that never contain this line fall back to
+    // one-document-per-line, which is what every legacy corpus assumes.
+    std::string doc_separator  = "<|endoftext|>";
+
+    // Documents longer than this are split into chunks at a line/UTF-8
+    // boundary. They are NOT truncated: the old code cut every line at 1024
+    // bytes and threw the tail away, which discarded ~72% of fineweb_edu_extra
+    // and ~81% of culturax_ja. Chunking keeps the text and still bounds the
+    // per-call cost of the BPE encoder.
+    uint32_t    max_doc_bytes  = 8192;
 
     // Curriculum schedule — 2B plan (800M + 600M + 300M + 300M)
     // Balanced for 100M model on T4 x2 Kaggle budget

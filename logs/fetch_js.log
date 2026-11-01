@@ -1,0 +1,10 @@
+[fetch] gh_javascript -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/code_raw/gh_javascript.txt  (bucket=code, target 0.9 GB)
+  rows=20,000 kept=15,296 0.11/0.9 GB 4.2 MB/s
+  rows=40,000 kept=30,595 0.23/0.9 GB 5.4 MB/s
+  rows=60,000 kept=45,930 0.35/0.9 GB 6.2 MB/s
+  rows=80,000 kept=61,340 0.46/0.9 GB 5.1 MB/s
+  rows=100,000 kept=76,516 0.58/0.9 GB 5.4 MB/s
+  rows=120,000 kept=91,871 0.69/0.9 GB 5.8 MB/s
+  rows=140,000 kept=107,121 0.81/0.9 GB 5.0 MB/s
+[done] /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/code_raw/gh_javascript.txt — 0.90 GB, 119,188 docs, 36,605 skipped
+[next] python3 scripts/build_pretrain_corpus.py --out data/corpus_pretrain_v8

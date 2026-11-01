@@ -1,0 +1,380 @@
+{
+  "out": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_pretrain_v8",
+  "audit": true,
+  "doc_separator": "<|endoftext|>",
+  "budget": {
+    "english": 6500000000,
+    "japanese": 7000000000,
+    "code": 4500000000,
+    "math": 2000000000
+  },
+  "bucket_bytes": {
+    "english": 123742855,
+    "japanese": 66116465,
+    "code": 46351012,
+    "math": 19810558
+  },
+  "bucket_tokens_est": {
+    "english": 35054633.14447592,
+    "japanese": 20791341.19496855,
+    "code": 12733794.505494505,
+    "math": 5354204.864864864
+  },
+  "bytes_per_token": {
+    "english": 3.53,
+    "japanese": 3.18,
+    "code": 3.64,
+    "math": 3.7
+  },
+  "target_token_share": {
+    "english": 0.32,
+    "japanese": 0.36,
+    "code": 0.2,
+    "math": 0.12
+  },
+  "chinchilla_tokens": 10000000000,
+  "sampling_weights": {
+    "english": 0.32,
+    "japanese": 0.36,
+    "code": 0.2,
+    "math": 0.12
+  },
+  "unique_docs_seen": 144819,
+  "sources": {
+    "english/fineweb_edu_extra": {
+      "source": "fineweb_edu_extra",
+      "bucket": "english",
+      "reader": "paragraph-group(avg=241B)",
+      "read_docs": 5726,
+      "read_bytes": 25000862,
+      "kept_docs": 5680,
+      "kept_bytes": 24796638,
+      "routed_math": 1,
+      "drop": {
+        "adult": 26,
+        "repeat_run": 10,
+        "mojibake": 2,
+        "url_spam": 2,
+        "duplicate": 2,
+        "low_alpha": 3
+      },
+      "seconds": 7.5
+    },
+    "english/wiki_en": {
+      "source": "wiki_en",
+      "bucket": "english",
+      "reader": "paragraph-group(avg=185B)",
+      "read_docs": 5680,
+      "read_bytes": 25004233,
+      "kept_docs": 5619,
+      "kept_bytes": 24738275,
+      "routed_math": 20,
+      "drop": {
+        "adult": 32,
+        "gambling": 8,
+        "low_alpha": 1
+      },
+      "seconds": 7.3
+    },
+    "english/fineweb_edu": {
+      "source": "fineweb_edu",
+      "bucket": "english",
+      "reader": "paragraph-group(avg=231B)",
+      "read_docs": 5725,
+      "read_bytes": 25009188,
+      "kept_docs": 5703,
+      "kept_bytes": 24915157,
+      "routed_math": 3,
+      "drop": {
+        "duplicate": 3,
+        "mojibake": 7,
+        "low_alpha": 2,
+        "adult": 7
+      },
+      "seconds": 7.4
+    },
+    "english/openwebtext": {
+      "source": "openwebtext",
+      "bucket": "english",
+      "reader": "paragraph-group(avg=269B)",
+      "read_docs": 5670,
+      "read_bytes": 25002410,
+      "kept_docs": 5602,
+      "kept_bytes": 24704791,
+      "routed_math": 19,
+      "drop": {
+        "adult": 31,
+        "mojibake": 8,
+        "low_alpha": 3,
+        "not_english": 5,
+        "gambling": 2
+      },
+      "seconds": 8.4
+    },
+    "english/fineweb": {
+      "source": "fineweb",
+      "bucket": "english",
+      "reader": "paragraph-group(avg=188B)",
+      "read_docs": 5779,
+      "read_bytes": 25000008,
+      "kept_docs": 5685,
+      "kept_bytes": 24587994,
+      "routed_math": 2,
+      "drop": {
+        "adult": 58,
+        "duplicate": 16,
+        "mojibake": 8,
+        "gambling": 10
+      },
+      "seconds": 8.6
+    },
+    "japanese/wiki_ja": {
+      "source": "wiki_ja",
+      "bucket": "japanese",
+      "reader": "paragraph-group(avg=221B)",
+      "read_docs": 5980,
+      "read_bytes": 25003221,
+      "kept_docs": 3828,
+      "kept_bytes": 16036980,
+      "routed_math": 0,
+      "drop": {
+        "not_japanese": 26,
+        "date_index": 1554,
+        "adult": 81,
+        "no_sentences": 429,
+        "gambling": 10,
+        "numeric_table": 26,
+        "mostly_latin": 18,
+        "korean": 2,
+        "listing_page": 6
+      },
+      "seconds": 5.8
+    },
+    "japanese/culturax_ja": {
+      "source": "culturax_ja",
+      "bucket": "japanese",
+      "reader": "doc-per-line(avg=5636B)",
+      "read_docs": 12176,
+      "read_bytes": 25010758,
+      "kept_docs": 10332,
+      "kept_bytes": 17602253,
+      "routed_math": 0,
+      "drop": {
+        "no_sentences": 550,
+        "date_index": 312,
+        "gambling": 43,
+        "spam_seo": 565,
+        "not_japanese": 9,
+        "repeat_run": 82,
+        "mojibake": 117,
+        "adult": 73,
+        "url_spam": 64,
+        "control_bytes": 6,
+        "numeric_table": 3,
+        "mostly_latin": 9,
+        "repeated_sentences": 3,
+        "binary_blob": 1,
+        "korean": 7
+      },
+      "seconds": 7.0
+    },
+    "japanese/mc4_ja": {
+      "source": "mc4_ja",
+      "bucket": "japanese",
+      "reader": "doc-per-line(avg=3561B)",
+      "read_docs": 17450,
+      "read_bytes": 25003427,
+      "kept_docs": 11060,
+      "kept_bytes": 18498158,
+      "routed_math": 0,
+      "drop": {
+        "mostly_latin": 168,
+        "date_index": 596,
+        "no_sentences": 3726,
+        "too_short": 1237,
+        "spam_seo": 330,
+        "numeric_table": 59,
+        "adult": 13,
+        "not_japanese": 198,
+        "repeated_sentences": 14,
+        "control_bytes": 20,
+        "url_spam": 25,
+        "binary_blob": 1,
+        "gambling": 3
+      },
+      "seconds": 6.7
+    },
+    "japanese/wiki_ja_older": {
+      "source": "wiki_ja_older",
+      "bucket": "japanese",
+      "reader": "paragraph-group(avg=231B)",
+      "read_docs": 5979,
+      "read_bytes": 25001633,
+      "kept_docs": 3339,
+      "kept_bytes": 13979074,
+      "routed_math": 0,
+      "drop": {
+        "duplicate": 552,
+        "mostly_latin": 16,
+        "date_index": 1542,
+        "not_japanese": 28,
+        "no_sentences": 465,
+        "adult": 3,
+        "numeric_table": 28,
+        "listing_page": 4,
+        "gambling": 2
+      },
+      "seconds": 5.6
+    },
+    "code/starcoder_extra": {
+      "source": "starcoder_extra",
+      "bucket": "code",
+      "reader": "code-reassemble(avg=33B)",
+      "read_docs": 4902,
+      "read_bytes": 25001538,
+      "kept_docs": 4720,
+      "kept_bytes": 24486102,
+      "routed_math": 0,
+      "drop": {
+        "too_short": 39,
+        "not_code": 63,
+        "too_few_lines": 14,
+        "generated": 62,
+        "binary_blob": 1,
+        "adult": 2,
+        "license_only": 1
+      },
+      "seconds": 2.6
+    },
+    "code/starcoder": {
+      "source": "starcoder",
+      "bucket": "code",
+      "reader": "code-reassemble(avg=33B)",
+      "read_docs": 3888,
+      "read_bytes": 25007493,
+      "kept_docs": 3399,
+      "kept_bytes": 21864910,
+      "routed_math": 0,
+      "drop": {
+        "duplicate": 430,
+        "not_code": 8,
+        "generated": 48,
+        "binary_blob": 1,
+        "adult": 2
+      },
+      "seconds": 2.5
+    },
+    "math/gsm8k_train": {
+      "source": "gsm8k_train",
+      "bucket": "math",
+      "reader": "jsonl",
+      "read_docs": 7473,
+      "read_bytes": 1777191,
+      "kept_docs": 7471,
+      "kept_bytes": 1777093,
+      "routed_math": 0,
+      "drop": {
+        "too_short": 2
+      },
+      "seconds": 0.3
+    },
+    "math/rl_math": {
+      "source": "rl_math",
+      "bucket": "math",
+      "reader": "jsonl",
+      "read_docs": 5000,
+      "read_bytes": 289789,
+      "kept_docs": 1830,
+      "kept_bytes": 169120,
+      "routed_math": 0,
+      "drop": {
+        "too_short": 3170
+      },
+      "seconds": 0.0
+    },
+    "math/rl_math_v2": {
+      "source": "rl_math_v2",
+      "bucket": "math",
+      "reader": "jsonl",
+      "read_docs": 6000,
+      "read_bytes": 745905,
+      "kept_docs": 4375,
+      "kept_bytes": 591310,
+      "routed_math": 0,
+      "drop": {
+        "too_short": 683,
+        "duplicate": 942
+      },
+      "seconds": 0.1
+    },
+    "math/rl_math_pot": {
+      "source": "rl_math_pot",
+      "bucket": "math",
+      "reader": "jsonl",
+      "read_docs": 3000,
+      "read_bytes": 292517,
+      "kept_docs": 2011,
+      "kept_bytes": 219791,
+      "routed_math": 0,
+      "drop": {
+        "too_short": 548,
+        "duplicate": 441
+      },
+      "seconds": 0.0
+    },
+    "math/sft_math": {
+      "source": "sft_math",
+      "bucket": "math",
+      "reader": "sft-jsonl",
+      "read_docs": 25000,
+      "read_bytes": 5214944,
+      "kept_docs": 16941,
+      "kept_bytes": 3518807,
+      "routed_math": 0,
+      "drop": {
+        "duplicate": 8059
+      },
+      "seconds": 0.9
+    },
+    "math/sft_math_v2": {
+      "source": "sft_math_v2",
+      "bucket": "math",
+      "reader": "sft-jsonl",
+      "read_docs": 25000,
+      "read_bytes": 7477211,
+      "kept_docs": 14922,
+      "kept_bytes": 4352227,
+      "routed_math": 0,
+      "drop": {
+        "duplicate": 10078
+      },
+      "seconds": 1.3
+    },
+    "math/sft_math_pot": {
+      "source": "sft_math_pot",
+      "bucket": "math",
+      "reader": "sft-jsonl",
+      "read_docs": 25000,
+      "read_bytes": 7550733,
+      "kept_docs": 14146,
+      "kept_bytes": 4048151,
+      "routed_math": 0,
+      "drop": {
+        "duplicate": 10854
+      },
+      "seconds": 1.1
+    },
+    "math/sft_think_math": {
+      "source": "sft_think_math",
+      "bucket": "math",
+      "reader": "sft-jsonl",
+      "read_docs": 18111,
+      "read_bytes": 4941491,
+      "kept_docs": 18111,
+      "kept_bytes": 4941491,
+      "routed_math": 0,
+      "drop": {},
+      "seconds": 0.7
+    }
+  }
+}

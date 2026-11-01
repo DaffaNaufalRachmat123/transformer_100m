@@ -84,7 +84,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
     ap.add_argument("--config", default="config_204m.json")
-    ap.add_argument("--vocab", default="vocab_6")
+    ap.add_argument("--vocab", default="vocab_7")
     ap.add_argument("--infer_bin", default="build_infer/infer")
     ap.add_argument("--mix_dir", default="sft_data/sft_mixed_enja")
     ap.add_argument("--per_family", type=int, default=100)

@@ -206,7 +206,7 @@ def main():
                     help="'infer' = original C++ engine, 'gguf' = llama.cpp")
     ap.add_argument("--model", default="translation_resources/facts/ckpt_sft_final.safetensors")
     ap.add_argument("--config", default="config_204m.json")
-    ap.add_argument("--vocab", default="vocab_6")
+    ap.add_argument("--vocab", default="vocab_7")
     ap.add_argument("--infer", default="build_infer/infer")
     ap.add_argument("--runner", default="build_infer/llama_runner")
     ap.add_argument("--ctx", type=int, default=512)

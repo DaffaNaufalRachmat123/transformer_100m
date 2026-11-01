@@ -95,7 +95,7 @@ def build_pretrain_cmd(args, env):
         "--vocab_dir", args.vocab_dir,
         "--checkpoint_dir", args.checkpoint_dir,
         "--batch_size", str(args.batch_size),
-        "--max_seq", str(args.max_seq),
+        "--seq", str(args.seq),
         "--max_tokens", str(args.max_tokens),
         "--lr", str(args.lr),
         "--save_every", str(args.save_every),
@@ -266,8 +266,8 @@ def main():
     parser.add_argument("--work_dir", default="",
                         help="Working directory (auto-detected if empty)")
     parser.add_argument("--checkpoint_dir", default="checkpoints")
-    parser.add_argument("--vocab_dir", default="vocab_6")
-    parser.add_argument("--bpe", default="bpe_v6.bin")
+    parser.add_argument("--vocab_dir", default="vocab_7")
+    parser.add_argument("--bpe", default="bpe_v7.bin")
     parser.add_argument("--log_every", type=int, default=5)
     parser.add_argument("--upload_every", type=int, default=0)
     parser.add_argument("--upload_script", default="")
@@ -275,9 +275,9 @@ def main():
     parser.add_argument("--num_gpus", type=int, default=2)
 
     # ─── Pretrain flags ─────────────────────────────────────────────────
-    parser.add_argument("--data_dir", default="data/corpus_final")
+    parser.add_argument("--data_dir", default="data/corpus_pretrain_v8")
     parser.add_argument("--batch_size", type=int, default=24)
-    parser.add_argument("--max_seq", type=int, default=256)
+    parser.add_argument("--seq", type=int, default=256)
     parser.add_argument("--max_tokens", type=int, default=2_000_000_000)
     parser.add_argument("--lr", type=float, default=1.4e-4)
     parser.add_argument("--grad_clip", type=float, default=5.0)
@@ -407,8 +407,10 @@ def main():
         print(f"  {stage:12s} {status}")
     print(f"{'='*60}")
 
-    # Exit with the last non-zero code, or 0 if all succeeded
-    sys.exit(max(results.values()) if results else 0)
+    # Rank by failure, not by numeric value: a signal-killed child returns a
+    # NEGATIVE code (-9 OOM-kill, -11 SIGSEGV), so max() over {skipped: 0,
+    # killed: -9} yields 0 and the caller sees the dead run as a success.
+    sys.exit(1 if any(rc != 0 for rc in results.values()) else 0)
 
 
 if __name__ == "__main__":

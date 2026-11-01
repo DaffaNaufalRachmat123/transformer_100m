@@ -1,0 +1,162 @@
+[build] out=/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_pretrain_v8  audit=False
+[build] budgets: english=6.5GB, japanese=7.0GB, code=4.5GB, math=3.5GB
+  fineweb_edu_extra    paragraph-group(avg=241B)    reading...
+      [fineweb_edu_extra] read  0.14 GB -> english  0.14/6.5 GB ( 2.2%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  0.29 GB -> english  0.29/6.5 GB ( 4.4%)  kept 99.2%    3.2 MB/s
+      [fineweb_edu_extra] read  0.43 GB -> english  0.43/6.5 GB ( 6.6%)  kept 99.2%    3.2 MB/s
+      [fineweb_edu_extra] read  0.57 GB -> english  0.57/6.5 GB ( 8.8%)  kept 99.2%    3.2 MB/s
+      [fineweb_edu_extra] read  0.72 GB -> english  0.72/6.5 GB (11.0%)  kept 99.2%    3.2 MB/s
+      [fineweb_edu_extra] read  0.86 GB -> english  0.86/6.5 GB (13.3%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  1.01 GB -> english  1.00/6.5 GB (15.5%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  1.15 GB -> english  1.15/6.5 GB (17.7%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  1.29 GB -> english  1.29/6.5 GB (19.8%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  1.43 GB -> english  1.43/6.5 GB (22.0%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  1.57 GB -> english  1.57/6.5 GB (24.1%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  1.71 GB -> english  1.71/6.5 GB (26.3%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] read  1.86 GB -> english  1.85/6.5 GB (28.5%)  kept 99.1%    3.2 MB/s
+      [fineweb_edu_extra] source cap 1.95 GB reached
+  fineweb_edu_extra    paragraph-group(avg=241B)    read=  446,136 kept=  442,053 ( 99.1%) math=    436   615.4s
+      drops: adult=1,011, repeat_run=846, url_spam=495, duplicate=349, mojibake=343, repetitive=185
+  wiki_en              paragraph-group(avg=185B)    reading...
+      [wiki_en] read  0.15 GB -> english  2.10/6.5 GB (32.3%)  kept 98.4%    3.3 MB/s
+      [wiki_en] read  0.30 GB -> english  2.24/6.5 GB (34.5%)  kept 98.7%    3.3 MB/s
+      [wiki_en] read  0.44 GB -> english  2.39/6.5 GB (36.8%)  kept 98.8%    3.3 MB/s
+      [wiki_en] read  0.59 GB -> english  2.54/6.5 GB (39.0%)  kept 98.7%    3.3 MB/s
+      [wiki_en] read  0.74 GB -> english  2.68/6.5 GB (41.2%)  kept 98.7%    3.3 MB/s
+      [wiki_en] read  0.88 GB -> english  2.83/6.5 GB (43.5%)  kept 98.8%    3.3 MB/s
+      [wiki_en] read  1.03 GB -> english  2.97/6.5 GB (45.7%)  kept 98.7%    3.3 MB/s
+      [wiki_en] read  1.17 GB -> english  3.11/6.5 GB (47.9%)  kept 98.7%    3.2 MB/s
+      [wiki_en] read  1.31 GB -> english  3.25/6.5 GB (50.1%)  kept 98.6%    3.2 MB/s
+      [wiki_en] read  1.46 GB -> english  3.40/6.5 GB (52.3%)  kept 98.6%    3.2 MB/s
+      [wiki_en] read  1.61 GB -> english  3.54/6.5 GB (54.5%)  kept 98.4%    3.2 MB/s
+      [wiki_en] read  1.75 GB -> english  3.69/6.5 GB (56.8%)  kept 98.4%    3.2 MB/s
+      [wiki_en] read  1.90 GB -> english  3.84/6.5 GB (59.0%)  kept 98.4%    3.3 MB/s
+  wiki_en              paragraph-group(avg=185B)    read=  444,833 kept=  437,725 ( 98.4%) math=    193   594.7s
+      drops: adult=2,260, repetitive=1,612, low_alpha=1,492, low_lexical_diversity=968, gambling=405, not_english=155
+  fineweb_edu          paragraph-group(avg=231B)    reading...
+      [fineweb_edu] read  0.14 GB -> english  4.01/6.5 GB (61.7%)  kept 99.3%    3.2 MB/s
+      [fineweb_edu] read  0.29 GB -> english  4.16/6.5 GB (64.0%)  kept 99.3%    3.3 MB/s
+      [fineweb_edu] read  0.44 GB -> english  4.30/6.5 GB (66.2%)  kept 99.3%    3.2 MB/s
+      [fineweb_edu] read  0.58 GB -> english  4.45/6.5 GB (68.4%)  kept 99.3%    3.2 MB/s
+      [fineweb_edu] read  0.73 GB -> english  4.59/6.5 GB (70.7%)  kept 99.3%    3.2 MB/s
+      [fineweb_edu] read  0.87 GB -> english  4.74/6.5 GB (72.9%)  kept 99.3%    3.2 MB/s
+      [fineweb_edu] read  1.02 GB -> english  4.89/6.5 GB (75.2%)  kept 99.3%    3.2 MB/s
+      [fineweb_edu] read  1.17 GB -> english  5.04/6.5 GB (77.5%)  kept 99.3%    3.3 MB/s
+      [fineweb_edu] read  1.32 GB -> english  5.19/6.5 GB (79.8%)  kept 99.3%    3.3 MB/s
+      [fineweb_edu] read  1.47 GB -> english  5.34/6.5 GB (82.1%)  kept 99.3%    3.3 MB/s
+  fineweb_edu          paragraph-group(avg=231B)    read=  353,881 kept=  351,393 ( 99.3%) math=    255   472.9s
+      drops: adult=832, duplicate=616, mojibake=353, repetitive=140, low_alpha=101, not_english=63
+  openwebtext          paragraph-group(avg=269B)    reading...
+      [openwebtext] read  0.13 GB -> english  5.55/6.5 GB (85.3%)  kept 98.9%    2.9 MB/s
+      [openwebtext] read  0.26 GB -> english  5.68/6.5 GB (87.3%)  kept 98.9%    2.9 MB/s
+      [openwebtext] read  0.39 GB -> english  5.81/6.5 GB (89.3%)  kept 98.8%    2.9 MB/s
+      [openwebtext] read  0.52 GB -> english  5.94/6.5 GB (91.3%)  kept 98.8%    2.9 MB/s
+      [openwebtext] read  0.65 GB -> english  6.07/6.5 GB (93.3%)  kept 98.8%    2.9 MB/s
+      [openwebtext] read  0.78 GB -> english  6.19/6.5 GB (95.3%)  kept 98.8%    2.9 MB/s
+      [openwebtext] read  0.90 GB -> english  6.32/6.5 GB (97.2%)  kept 98.7%    2.9 MB/s
+  openwebtext          paragraph-group(avg=269B)    read=  230,944 kept=  228,043 ( 98.7%) math=    388   354.8s
+      drops: adult=1,481, mojibake=602, not_english=113, low_alpha=104, repetitive=75, gambling=68
+  fineweb              paragraph-group(avg=188B)    reading...
+  fineweb              paragraph-group(avg=188B)    read=   16,354 kept=   16,072 ( 98.3%) math=      7    24.9s
+      drops: adult=174, duplicate=43, gambling=29, mojibake=21, low_alpha=3, repetitive=2
+  wiki_ja              paragraph-group(avg=221B)    reading...
+      [wiki_ja] read  0.18 GB -> japanese  0.46/7.0 GB ( 6.5%)  kept 92.0%    4.1 MB/s
+      [wiki_ja] read  0.36 GB -> japanese  0.91/7.0 GB (12.9%)  kept 92.1%    4.0 MB/s
+      [wiki_ja] read  0.54 GB -> japanese  1.34/7.0 GB (19.2%)  kept 92.2%    4.0 MB/s
+      [wiki_ja] read  0.71 GB -> japanese  1.76/7.0 GB (25.2%)  kept 92.1%    3.9 MB/s
+      [wiki_ja] read  0.88 GB -> japanese  2.17/7.0 GB (31.0%)  kept 92.0%    3.9 MB/s
+      [wiki_ja] read  1.05 GB -> japanese  2.59/7.0 GB (36.9%)  kept 92.0%    3.9 MB/s
+      [wiki_ja] read  1.22 GB -> japanese  2.99/7.0 GB (42.7%)  kept 91.8%    3.9 MB/s
+      [wiki_ja] read  1.39 GB -> japanese  3.39/7.0 GB (48.4%)  kept 91.6%    3.8 MB/s
+  wiki_ja              paragraph-group(avg=221B)    read=  334,312 kept=  306,304 ( 91.6%) math=      0   363.1s
+      drops: no_sentences=7,848, adult=6,887, not_japanese=3,848, date_index=3,829, numeric_table=1,396, mostly_latin=1,282
+  culturax_ja          doc-per-line(avg=5636B)      reading...
+      [culturax_ja] read  0.16 GB -> japanese  3.72/7.0 GB (53.1%)  kept 85.3%    3.5 MB/s
+      [culturax_ja] read  0.31 GB -> japanese  4.03/7.0 GB (57.5%)  kept 85.2%    3.5 MB/s
+      [culturax_ja] read  0.47 GB -> japanese  4.33/7.0 GB (61.9%)  kept 85.1%    3.5 MB/s
+      [culturax_ja] read  0.63 GB -> japanese  4.64/7.0 GB (66.3%)  kept 85.0%    3.5 MB/s
+      [culturax_ja] read  0.78 GB -> japanese  4.95/7.0 GB (70.7%)  kept 85.0%    3.5 MB/s
+      [culturax_ja] read  0.94 GB -> japanese  5.25/7.0 GB (75.1%)  kept 85.0%    3.5 MB/s
+  culturax_ja          doc-per-line(avg=5636B)      read=  485,814 kept=  413,136 ( 85.0%) math=      0   290.1s
+      drops: spam_seo=23,346, no_sentences=22,244, blog_aggregator=9,900, mojibake=4,364, repeat_run=3,659, adult=2,777
+  mc4_ja               doc-per-line(avg=3561B)      reading...
+      [mc4_ja] read  0.16 GB -> japanese  5.71/7.0 GB (81.6%)  kept 62.9%    3.5 MB/s
+  mc4_ja               doc-per-line(avg=3561B)      read=  194,309 kept=  122,567 ( 63.1%) math=      0    78.9s
+      drops: no_sentences=37,861, too_short=13,599, blog_aggregator=8,011, repetitive=3,480, spam_seo=3,324, not_japanese=2,229
+  wiki_ja_older        paragraph-group(avg=231B)    reading...
+      [wiki_ja_older] read  0.18 GB -> japanese  6.35/7.0 GB (90.7%)  kept 81.8%    4.0 MB/s
+      [wiki_ja_older] read  0.36 GB -> japanese  6.75/7.0 GB (96.5%)  kept 82.0%    4.0 MB/s
+  wiki_ja_older        paragraph-group(avg=231B)    read=  112,553 kept=   93,029 ( 82.7%) math=      0   117.4s
+      drops: duplicate=11,785, no_sentences=3,510, date_index=1,419, not_japanese=1,075, numeric_table=496, mostly_latin=415
+  starcoder_extra      code-reassemble(avg=33B)     reading...
+      [starcoder_extra] read  0.42 GB -> code  0.42/4.5 GB ( 9.2%)  kept 96.5%    9.3 MB/s
+      [starcoder_extra] read  0.84 GB -> code  0.83/4.5 GB (18.4%)  kept 96.6%    9.3 MB/s
+      [starcoder_extra] source cap 1.12 GB reached
+  starcoder_extra      code-reassemble(avg=33B)     read=  229,381 kept=  221,361 ( 96.5%) math=      0   122.8s
+      drops: generated=2,496, not_code=2,310, too_short=2,221, too_few_lines=526, adult=145, duplicate=104
+  starcoder            code-reassemble(avg=33B)     reading...
+      [starcoder] read  0.43 GB -> code  1.51/4.5 GB (33.5%)  kept 87.7%    9.6 MB/s
+      [starcoder] read  0.86 GB -> code  1.89/4.5 GB (42.0%)  kept 87.7%    9.6 MB/s
+      [starcoder] source cap 1.12 GB reached
+  starcoder            code-reassemble(avg=33B)     read=  196,312 kept=  173,916 ( 88.6%) math=      0   131.0s
+      drops: duplicate=19,573, generated=2,363, adult=168, not_code=157, binary_blob=107, mojibake=28
+  gsm8k_train          jsonl                        reading...
+  gsm8k_train          jsonl                        read=    7,473 kept=    7,471 (100.0%) math=      0     0.3s
+      drops: too_short=2
+  rl_math              jsonl                        reading...
+  rl_math              jsonl                        read=    5,000 kept=    1,830 ( 36.6%) math=      0     0.0s
+      drops: too_short=3,170
+  rl_math_v2           jsonl                        reading...
+  rl_math_v2           jsonl                        read=    6,000 kept=    4,375 ( 72.9%) math=      0     0.1s
+      drops: duplicate=942, too_short=683
+  rl_math_pot          jsonl                        reading...
+  rl_math_pot          jsonl                        read=    3,000 kept=    2,011 ( 67.0%) math=      0     0.0s
+      drops: too_short=548, duplicate=441
+  sft_math             sft-jsonl                    reading...
+  sft_math             sft-jsonl                    read=   48,004 kept=   30,811 ( 64.2%) math=      0     1.8s
+      drops: duplicate=17,193
+  sft_math_v2          sft-jsonl                    reading...
+  sft_math_v2          sft-jsonl                    read=   72,170 kept=   33,390 ( 46.3%) math=      0     3.8s
+      drops: duplicate=38,780
+  sft_math_pot         sft-jsonl                    reading...
+  sft_math_pot         sft-jsonl                    read=   36,047 kept=   18,480 ( 51.3%) math=      0     1.7s
+      drops: duplicate=17,567
+  sft_think_math       sft-jsonl                    reading...
+  sft_think_math       sft-jsonl                    read=   18,111 kept=   18,111 (100.0%) math=      0     0.8s
+  finemath             doc-per-line(avg=7160B)      reading...
+      [finemath] read  0.45 GB -> math  0.47/3.5 GB (13.4%)  kept 94.2%   10.1 MB/s
+      [finemath] read  0.92 GB -> math  0.91/3.5 GB (25.9%)  kept 94.1%   10.3 MB/s
+      [finemath] read  1.39 GB -> math  1.34/3.5 GB (38.3%)  kept 94.1%   10.3 MB/s
+      [finemath] read  1.86 GB -> math  1.77/3.5 GB (50.5%)  kept 94.0%   10.3 MB/s
+      [finemath] read  2.32 GB -> math  2.20/3.5 GB (62.9%)  kept 94.0%   10.3 MB/s
+      [finemath] read  2.79 GB -> math  2.63/3.5 GB (75.2%)  kept 93.9%   10.3 MB/s
+  finemath             doc-per-line(avg=7160B)      read=  434,220 kept=  407,754 ( 93.9%) math=      0   286.5s
+      drops: repeat_run=22,400, duplicate=1,697, control_bytes=1,146, gambling=685, url_spam=252, binary_blob=182
+  code_contests        code-chunk(avg=2111B)        reading...
+  code_contests        code-chunk(avg=2111B)        read=    6,715 kept=        0 (  0.0%) math=      0     0.4s
+      drops: too_few_lines=6,664, generated=51
+  csn_javascript       code-chunk(avg=1318B)        reading...
+  csn_javascript       code-chunk(avg=1318B)        read=  170,482 kept=        0 (  0.0%) math=      0     2.6s
+      drops: too_short=91,403, too_few_lines=79,057, generated=22
+  gh_javascript        code-chunk(avg=8969B)        reading...
+  gh_javascript        code-chunk(avg=8969B)        read=1,792,810 kept=        1 (  0.0%) math=      0    13.4s
+      drops: too_short=1,647,557, too_few_lines=144,278, generated=971, minified=2, not_code=1
+  rosetta              code-chunk(avg=1475B)        reading...
+  rosetta              code-chunk(avg=1475B)        read=   48,670 kept=        0 (  0.0%) math=      0     1.8s
+      drops: too_few_lines=48,664, generated=6
+
+[build] bucket totals
+  bucket         GB   budget   unique tok   share  target  epochs@10B
+  english      6.50      6.5        1.84B   34.0%   32.0%        1.74
+  japanese     7.00      7.0        2.20B   40.7%   36.0%        1.64
+  code         2.25      4.5        0.62B   11.4%   20.0%        3.24
+  math         2.79      3.5        0.75B   13.9%   12.0%        1.59
+  TOTAL       18.54     21.5        5.41B
+  Chinchilla target for 492M @ 20 tok/param: 10.0B tokens (1.85 epochs over this corpus)
+
+[build] sampling weights for the trainer (export before train_pretrain_cuda):
+  export TW_W_EN=0.320
+  export TW_W_JA=0.360
+  export TW_W_CODE=0.200
+  export TW_W_MATH=0.120
+[build] report -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/logs/pretrain_corpus_build.json

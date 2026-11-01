@@ -5,15 +5,15 @@ This tokenizer is NOT GPT-2/HuggingFace compatible, so llama.cpp cannot encode
 prompts for this model. The differences (all verified against
 bpe/bpe_tokenizer.cpp) are:
 
-  1. Pre-tokenizer splits on runs of bytes <= 0x20 and COLLAPSES them. Only the
-     first word of a segment lacks the 'Ġ' space prefix.
+  1. Pre-tokenizer splits on runs of bytes <= 0x20 and KEEPS the whitespace
+     verbatim; only ONE space fuses to the following word (GPT-2 style).
   2. Word seeding is greedy LONGEST-MATCH over up to 8 *bytes*, not per
      character.
   3. Merges are applied as repeated left-to-right passes over any adjacent pair
      present in the merge table -- NOT lowest-rank-first as in classic BPE.
   4. '<|...|>' specials are split out before any of the above.
-  5. merges.txt lines starting with '#' are dropped by the C++ loader, which
-     silently removes 42 real merges. We reproduce that.
+  5. Only the leading '#version:' banner in merges.txt is a comment. Real merge
+     rules whose left token is '#' ('#!', '#!/usr/bin/env', '##'...) are kept.
 
 Use as a library (encode/decode) or a CLI:
 
@@ -23,6 +23,7 @@ Use as a library (encode/decode) or a CLI:
 
 import argparse
 import json
+import struct
 import sys
 from pathlib import Path
 
@@ -49,11 +50,11 @@ BYTE_DECODER = {v: k for k, v in BYTE_ENCODER.items()}
 
 SPACE_GLYPH = BYTE_ENCODER[0x20]          # 'Ġ'
 MAX_MATCH_BYTES = 8                        # C++: len = min(size-pos, 8)
-MAX_WORD_BYTES = 512                       # C++: word length guard
+MAX_WORD_BYTES = 512                       # C++: kMaxWordBytes (chunk size)
 
 
 class BPEReference:
-    def __init__(self, vocab_dir=ROOT / "vocab_6"):
+    def __init__(self, vocab_dir=ROOT / "vocab_7"):
         vocab_dir = Path(vocab_dir)
         raw = (vocab_dir / "vocab.txt").read_text(encoding="utf-8")
         self.tokens = raw.split("\n")
@@ -66,7 +67,7 @@ class BPEReference:
 
         self.merges = {}
         for line in (vocab_dir / "merges.txt").read_text(encoding="utf-8").split("\n"):
-            if not line or line[0] == "#":       # mirrors the C++ loader
+            if not line or line.startswith("#version:"):   # mirrors the C++ loader
                 continue
             sp = line.find(" ")
             if sp < 0:
@@ -124,8 +125,7 @@ class BPEReference:
         return out
 
     # ── stage 2: longest-match seed + left-to-right merge passes ─────────
-    def encode_word(self, word: str):
-        wb = word.encode("utf-8")[:MAX_WORD_BYTES]
+    def _encode_chunk(self, wb: bytes):
         seq, pos, n = [], 0, len(wb)
         while pos < n:
             hit = False
@@ -155,6 +155,22 @@ class BPEReference:
             seq = merged
         return seq
 
+    def encode_word(self, word: str):
+        wb = word.encode("utf-8")
+        if len(wb) <= MAX_WORD_BYTES:
+            return self._encode_chunk(wb)
+        # Split, never truncate: Japanese has no spaces, so a whole sentence is
+        # one pre-token and truncating dropped 43% of wiki_ja characters.
+        out, pos = [], 0
+        while pos < len(wb):
+            take = min(MAX_WORD_BYTES, len(wb) - pos)
+            if pos + take < len(wb):
+                while take > 1 and (wb[pos + take] & 0xC0) == 0x80:
+                    take -= 1
+            out.extend(self._encode_chunk(wb[pos:pos + take]))
+            pos += take
+        return out
+
     # ── stage 3: split specials, then encode each segment ────────────────
     def encode(self, text: str, add_bos=False, add_eos=False):
         result = []
@@ -180,15 +196,16 @@ class BPEReference:
                         p = sp_end
                         continue
             seg_start = p
+            # A '<|' that is not a known special is ordinary text: step over it
+            # so the scan can advance, but keep it in the segment.
+            if end - p >= 2 and bb[p] == LT and bb[p + 1] == PIPE:
+                p += 2
             while p < end:
                 if end - p >= 2 and bb[p] == LT and bb[p + 1] == PIPE:
                     break
                 p += 1
-            if p > seg_start:
-                for word in self.pretokenize(bb[seg_start:p]):
-                    result.extend(self.encode_word(word))
-            else:
-                p += 2                        # unmatched '<|', avoid infinite loop
+            for word in self.pretokenize(bb[seg_start:p]):
+                result.extend(self.encode_word(word))
         if add_eos:
             result.append(self.eos)
         return result
@@ -204,17 +221,45 @@ class BPEReference:
         raw = bytes(BYTE_DECODER[c] for c in "".join(glyphs) if c in BYTE_DECODER)
         return raw.decode("utf-8", errors="replace")
 
+    def export_binary(self, path):
+        """Write the BP2 file that BPEEncoder::load_binary reads.
+
+        Needed because the two artifacts drift: bpe_v7.bin still carried the
+        pre-rename specials <|phone_event|>/<|app_usage|> at ids 9/10 while
+        vocab_7/vocab.txt had <|think|>/<|/think|>, so `--bpe` and
+        `--vocab_dir` disagreed on two token ids.
+        """
+        pairs = sorted(self.merges.items(), key=lambda kv: kv[1])
+        with open(path, "wb") as f:
+            f.write(b"BP2\0")
+            f.write(struct.pack("<i", len(self.tokens)))
+            for t in self.tokens:
+                b = t.encode("utf-8")
+                f.write(struct.pack("<i", len(b)))
+                f.write(b)
+            f.write(struct.pack("<i", len(pairs)))
+            for (a, b), _ in pairs:
+                f.write(struct.pack("<ii", a, b))
+        return len(self.tokens), len(pairs)
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--vocab", default=str(ROOT / "vocab_6"))
+    ap.add_argument("--vocab", default=str(ROOT / "vocab_7"))
     ap.add_argument("--text", default="")
     ap.add_argument("--stdin", action="store_true",
                     help="read one text per line, print space-separated ids")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--export-bin", default="",
+                    help="write a BP2 binary tokenizer from --vocab and exit")
     args = ap.parse_args()
 
     enc = BPEReference(args.vocab)
+
+    if args.export_bin:
+        nv, nm = enc.export_binary(args.export_bin)
+        print(f"wrote {args.export_bin}: vocab={nv} merges={nm}")
+        return
 
     if args.selftest:
         # byte table must match the hand-written C++ one at known indices

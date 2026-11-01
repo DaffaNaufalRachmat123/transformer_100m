@@ -81,9 +81,9 @@ static void sync_arch() {
 }
 
 // ─── CLI config ────────────────────────────────────────────────────────────
-static std::string g_data_dir       = "data/corpus_final";
+static std::string g_data_dir       = "data/corpus_pretrain_v8";
 static std::string g_checkpoint_dir = "checkpoints";
-static std::string g_vocab_dir      = "vocab_6";
+static std::string g_vocab_dir      = "vocab_7";
 static std::string g_bpe_path       = "";  // empty = use vocab_dir text format
 static std::string g_optimizer      = "adamw";
 static uint64_t g_max_tokens        = 2'000'000'000ULL;
@@ -134,6 +134,8 @@ static float g_grad_clip   = 0.5f;
 // therefore 4096, which puts the threshold at ~1.3e-7 and preserves the signal.
 // Do not lower this without re-deriving the bound above.
 static float g_loss_scale  = 4096.0f;
+// Identifies which tokenizer produced the ids a checkpoint was trained on.
+static uint64_t g_tok_fingerprint = 0;
 
 // ─── Checkpoint config ─────────────────────────────────────────────────────
 static int g_save_every    = 500;
@@ -226,7 +228,7 @@ struct PhaseConfig {
 };
 
 static std::vector<PhaseConfig> compute_phases(uint64_t total_tokens) {
-    // Single-phase mode: train at the user-specified --max_seq only.
+    // Single-phase mode: train at the user-specified --seq only.
     // No curriculum transitions — the model gets full budget at one seq_len.
     // This is ideal for small models (100M) where long-context curriculum
     // adds complexity without proportional benefit.
@@ -555,23 +557,6 @@ void save_checkpoint(const std::string& dir,
     }
     w.finalize(model_path);
 
-    // Save training state
-    {
-        std::ofstream sf(state_path);
-        sf << "tokens_processed=" << tokens_done << "\n";
-        sf << "step=" << step << "\n";
-        sf << "phase=" << g_current_phase << "\n";
-        sf << "ema_loss=" << ema_loss_val << "\n";
-        sf << "ema_local_min=" << ema_local_min_val << "\n";
-        sf << "lr_decay_factor=" << lr_decay_val << "\n";
-        sf << "safety_mode=" << safety_mode_name(g_safety) << "\n";
-        sf << "lr=" << g_lr << "\n";
-        sf << "grad_clip=" << g_grad_clip << "\n";
-        sf << "gnorm_ema=" << gnorm_ema << "\n";
-        sf << "lr_adaptive_factor=" << lr_adaptive_factor << "\n";
-        sf.close();
-    }
-
     // ─── Save optimizer states (FP32: m, v, master) ────────────────────────
     {
         SafeTensorsWriter ow;
@@ -613,6 +598,29 @@ void save_checkpoint(const std::string& dir,
         ow.finalize(optim_path);
         printf("[CKPT] Optimizer: %s (%.1f MB)\n",
                optim_path.c_str(), fs::file_size(optim_path) / 1e6);
+    }
+
+    // Written LAST so it acts as the commit marker: both safetensors files are
+    // already renamed into place by this point, so a kill anywhere earlier
+    // leaves train_state.txt pointing at the previous consistent step rather
+    // than at a step whose optimizer moments were never written.
+    {
+        std::ofstream sf(state_path);
+        sf << "tokens_processed=" << tokens_done << "\n";
+        sf << "step=" << step << "\n";
+        sf << "phase=" << g_current_phase << "\n";
+        sf << "ema_loss=" << ema_loss_val << "\n";
+        sf << "ema_local_min=" << ema_local_min_val << "\n";
+        sf << "lr_decay_factor=" << lr_decay_val << "\n";
+        sf << "safety_mode=" << safety_mode_name(g_safety) << "\n";
+        sf << "lr=" << g_lr << "\n";
+        sf << "grad_clip=" << g_grad_clip << "\n";
+        sf << "gnorm_ema=" << gnorm_ema << "\n";
+        sf << "lr_adaptive_factor=" << lr_adaptive_factor << "\n";
+        // The scaler adjusts this at runtime, so the CLI value is only a seed.
+        sf << "loss_scale=" << g_loss_scale << "\n";
+        sf << "tok_fingerprint=" << g_tok_fingerprint << "\n";
+        sf.close();
     }
 
     printf("[CKPT] Saved: %s (%.1f MB) | %s tokens\n",
@@ -727,7 +735,7 @@ int main(int argc, char** argv) {
         else if (arg == "--bpe" && i+1 < argc)        g_bpe_path = argv[++i];
         else if (arg == "--max_tokens" && i+1 < argc) g_max_tokens = std::stoull(argv[++i]);
         else if (arg == "--batch_size" && i+1 < argc) g_batch_size = std::stoi(argv[++i]);
-        else if (arg == "--max_seq" && i+1 < argc)    g_max_seq = std::stoi(argv[++i]);
+        else if (arg == "--seq" && i+1 < argc)    g_max_seq = std::stoi(argv[++i]);
         else if (arg == "--lr" && i+1 < argc)         g_lr = std::stof(argv[++i]);
         else if (arg == "--grad_clip" && i+1 < argc) g_grad_clip = std::stof(argv[++i]);
         else if (arg == "--safety" && i+1 < argc) {
@@ -751,14 +759,14 @@ int main(int argc, char** argv) {
         else if (arg == "--num_gpus" && i+1 < argc)   g_num_gpus = std::stoi(argv[++i]);
         else if (arg == "--help") {
             printf("Usage: train_pretrain_cuda [options]\n");
-            printf("  --data_dir <path>         Corpus directory [data/corpus_final]\n");
+            printf("  --data_dir <path>         Corpus directory [data/corpus_pretrain_v8]\n");
             printf("  --checkpoint_dir <path>   Checkpoint output [checkpoints]\n");
             printf("  --arch_config <path>      Architecture JSON [built-in 492M]\n");
-            printf("  --vocab_dir <path>        Vocab directory [vocab_6]\n");
+            printf("  --vocab_dir <path>        Vocab directory [vocab_7]\n");
             printf("  --bpe <path>              BPE binary model path (optional)\n");
             printf("  --max_tokens <N>          Token budget [9B]\n");
             printf("  --batch_size <N>          Batch size per GPU [8]\n");
-            printf("  --max_seq <N>             Initial max seq length [256]\n");
+            printf("  --seq <N>                 Sequence length (single-phase) [2048]\n");
             printf("  --lr <float>              Peak learning rate [3e-4 light / 1.5e-4 legacy]\n");
             printf("  --grad_clip <float>        Gradient clipping threshold [0.5]\n");
             printf("  --loss_scale <float>      FP16 loss scale [4096] (do not set below ~1024)\n");
@@ -781,9 +789,9 @@ int main(int argc, char** argv) {
     if (!g_arch_config.empty() && !arch::load(g_arch_config, g_arch)) return 1;
     sync_arch();
 
-    // RoPE tables are cut to MAX_SEQ_LEN; a longer --max_seq would index past them.
+    // RoPE tables are cut to MAX_SEQ_LEN; a longer --seq would index past them.
     if (g_max_seq > MAX_SEQ_LEN) {
-        fprintf(stderr, "[ERR] --max_seq %d exceeds max_seq_len %d in the arch config\n",
+        fprintf(stderr, "[ERR] --seq %d exceeds max_seq_len %d in the arch config\n",
                 g_max_seq, MAX_SEQ_LEN);
         return 1;
     }
@@ -854,18 +862,62 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
 
     // ─── Load tokenizer ────────────────────────────────────────────────────
     BPEEncoder tok;
+    bool tok_loaded = false;
     if (!g_bpe_path.empty()) {
-        if (!tok.load(g_bpe_path)) {
-            fprintf(stderr, "[ERR] Failed to load BPE binary: %s\n", g_bpe_path.c_str());
+        tok_loaded = tok.load(g_bpe_path);
+        if (!tok_loaded)
+            fprintf(stderr, "[WARN] BPE binary unusable (%s) — falling back to %s\n",
+                    g_bpe_path.c_str(), g_vocab_dir.c_str());
+    }
+    if (!tok_loaded) {
+        try {
+            tok.load_vocab(g_vocab_dir);
+            tok_loaded = tok.vocab_size() > 0;
+        } catch (const std::exception& e) {
+            fprintf(stderr, "[ERR] %s\n", e.what());
             return 1;
         }
-    } else {
-        tok.load_vocab(g_vocab_dir);
     }
     printf("[TOK] Loaded: vocab_size=%zu\n", tok.vocab_size());
 
     int tok_bos = tok.bos_id(), tok_eos = tok.eos_id(), tok_pad = tok.pad_id();
+    // An empty/partial tokenizer yields special_id() == UINT32_MAX, which
+    // becomes -1 here and then indexes the embedding table out of bounds
+    // ("[CUDA-ERR] embed_fwd: invalid argument"). Fail loudly instead.
+    if (!tok_loaded || tok.vocab_size() == 0 ||
+        tok_bos < 0 || tok_eos < 0 ||
+        tok_bos >= MODEL_VOCAB || tok_eos >= MODEL_VOCAB) {
+        fprintf(stderr, "[ERR] Tokenizer invalid: vocab=%zu bos=%d eos=%d pad=%d "
+                        "(model vocab=%d)\n",
+                tok.vocab_size(), tok_bos, tok_eos, tok_pad, MODEL_VOCAB);
+        return 1;
+    }
+    if ((int)tok.vocab_size() != MODEL_VOCAB) {
+        fprintf(stderr, "[ERR] Tokenizer vocab %zu != model vocab %d — "
+                        "embedding rows and token ids would not line up\n",
+                tok.vocab_size(), MODEL_VOCAB);
+        return 1;
+    }
     if (tok_pad < 0) tok_pad = tok_bos;
+
+    // Vocab size cannot tell vocab_7 from vocab_8 — both are 49152 — so a
+    // resume or an SFT stage pointed at the wrong tokenizer would train
+    // happily against ids that mean something else. Fingerprint the actual
+    // encoding behaviour, which also captures the merge table.
+    {
+        static const char* kProbe =
+            "The capital of Japan is Tokyo.\n日本語のテキストです。コンピュータ\n"
+            "def f(x):\n    return x + 1\n\\frac{1}{2} + \\sqrt{3} = 0";
+        auto ids = tok.encode(std::string(kProbe), false, false);
+        uint64_t h = 1469598103934665603ULL;      // FNV-1a
+        for (auto id : ids) {
+            uint64_t v = (uint64_t)id;
+            for (int b = 0; b < 4; b++) { h ^= (v >> (8 * b)) & 0xFF; h *= 1099511628211ULL; }
+        }
+        g_tok_fingerprint = h;
+        printf("[TOK] fingerprint=%016llx (%zu probe tokens)\n",
+               (unsigned long long)h, ids.size());
+    }
 
     // ─── Compute training phases ────────────────────────────────────────────
     auto phases = compute_phases(g_max_tokens);
@@ -900,6 +952,7 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
 
     // ─── Cross-platform resume: detect LR/clip changes, trigger warmup ────
     float saved_lr = g_lr;           // default: same as current
+    uint64_t saved_tok_fingerprint = 0;
     float saved_grad_clip = g_grad_clip;
     bool lr_changed = false;
     bool clip_changed = false;
@@ -1084,7 +1137,29 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
                         lr_adaptive_factor = parse_flt("lr_adaptive_factor", 19);
                         if (!std::isfinite(lr_adaptive_factor)) lr_adaptive_factor = 1.0f;
                     }
+                    else if (line.find("loss_scale=") == 0) {
+                        float ls = parse_flt("loss_scale", 11);
+                        if (std::isfinite(ls) && ls >= 1.0f) g_loss_scale = ls;
+                    }
+                    else if (line.find("tok_fingerprint=") == 0) {
+                        saved_tok_fingerprint =
+                            strtoull(line.substr(16).c_str(), nullptr, 10);
+                    }
                 }
+            }
+            if (saved_tok_fingerprint != 0 &&
+                saved_tok_fingerprint != g_tok_fingerprint) {
+                fprintf(stderr,
+                    "\n[ERR] Tokenizer mismatch on resume.\n"
+                    "      checkpoint was trained with fingerprint %016llx\n"
+                    "      but --vocab_dir/--bpe give                %016llx\n"
+                    "      Both vocabularies are %d tokens, so this is otherwise\n"
+                    "      undetectable: every learned embedding row would be\n"
+                    "      paired with a different piece of text. Point at the\n"
+                    "      original tokenizer, or start a fresh run.\n",
+                    (unsigned long long)saved_tok_fingerprint,
+                    (unsigned long long)g_tok_fingerprint, MODEL_VOCAB);
+                return 1;
             }
             // Force one warmup ramp at resume: the cooldown ramp scales LR
             // down to ~30% and linearly climbs back over kPhaseWarmupSteps
@@ -1173,6 +1248,14 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
         fprintf(stderr, "[ERR] Failed to init dataset from %s\n", g_data_dir.c_str());
         return 1;
     }
+    // next_batch() strides by the dataset's own seq_len while the batch buffer
+    // below is sized B*g_max_seq. If they ever diverge the tail of every
+    // sequence stays zero-filled and the model trains on runs of token 0.
+    if ((int)dataset.current_seq_len() != g_max_seq) {
+        fprintf(stderr, "[ERR] dataset seq_len=%u != --seq %d\n",
+                dataset.current_seq_len(), g_max_seq);
+        return 1;
+    }
     dataset.print_info();
     printf("[DATA] Streaming loader ready: %s\n", g_data_dir.c_str());
 
@@ -1241,6 +1324,12 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
     // Pre-allocate gradient clipping scalar (avoid per-step cudaMalloc)
     float* d_norm_sq = nullptr;
     cudaMalloc(&d_norm_sq, sizeof(float));
+    // Non-finite gradient counters for the dynamic loss scaler.
+    unsigned int* d_nan_cnt = nullptr;
+    unsigned int* d_inf_cnt = nullptr;
+    cudaMalloc(&d_nan_cnt, sizeof(unsigned int));
+    cudaMalloc(&d_inf_cnt, sizeof(unsigned int));
+    int clean_steps = 0;
 
     while (g_tokens_processed < g_max_tokens && !g_stop_requested) {
         // ─── Reset arena pool (reclaim all transient memory from last step) ─
@@ -1342,8 +1431,14 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
         // ─── OOM CHECK: detect CUDA out-of-memory before it corrupts state ───
         {
             cudaError_t err = cudaGetLastError();
-            if (err == cudaErrorMemoryAllocation || err == cudaErrorLaunchFailure) {
-                printf("\n[OOM] CUDA out-of-memory at step=%d seq=%d batch=%d!\n", step, S, B);
+            // Any error here is fatal, not just the two allocation codes. A
+            // kernel that dereferenced a bad pointer raises
+            // cudaErrorIllegalAddress, which is sticky: every later call fails
+            // too, so continuing means the next save writes zero-filled tensors
+            // over a good checkpoint.
+            if (err != cudaSuccess) {
+                printf("\n[OOM] CUDA error at step=%d seq=%d batch=%d: %s\n",
+                       step, S, B, cudaGetErrorString(err));
                 printf("[OOM] Skipping checkpoint save to protect existing checkpoint.\n");
                 printf("[OOM] Uploading last good checkpoint to Google Drive...\n");
                 // Trigger emergency upload (sync, not async)
@@ -1410,6 +1505,17 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
             printf("[NAN/INF] loss=%.4f at step %d — skipping optimizer\n", loss_val, step);
             skip_this_step = true;
         }
+#ifdef USE_DDP
+        // Every rank must reach the same verdict. Ranks read different data
+        // (ds_cfg.seed is offset by rank), so loss_val differs, and the
+        // AllReduce below sits inside `if (!skip_this_step)`. A split decision
+        // leaves one rank inside a collective the other never enters, and this
+        // NCCL setup has no watchdog or timeout — both processes spin at 100%
+        // until killed, with no checkpoint past that point.
+        if (g_use_ddp)
+            skip_this_step =
+                cuda::ddp::allreduce_scalar_max(skip_this_step ? 1.0f : 0.0f) > 0.5f;
+#endif
         // Fold the loss into the EMA baseline. Normal steps use the fast
         // beta so the baseline tracks real progress. Detected spikes use a
         // much slower beta (trickle) so a single bad batch doesn't drag the
@@ -1499,12 +1605,69 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
                 all_grads.push_back(&lg.dw3);
                 all_grads.push_back(&lg.drms_attn); all_grads.push_back(&lg.drms_ffn);
             }
+            cuda::sync_compute();   // NCCL runs on its own stream; without this
+                                    // it reads gradient buffers that the backward
+                                    // kernels are still writing. d_embed is the
+                                    // worst case: 62.9M elements, and the final
+                                    // f32->f16 pass over it takes far longer than
+                                    // the NCCL launch it races against.
             cuda::ddp::allreduce_grads(all_grads);
             cuda::ddp::sync();
             for (auto* gp : all_grads)
                 if (gp && gp->data && gp->numel() > 0) cuda::ddp::average_grad(*gp);
         }
 #endif
+
+        // ─── FP16 OVERFLOW CHECK (must precede the un-scale) ────────────────
+        // launch_scale_fp16 rewrites every non-finite element to 0, so once the
+        // un-scale pass has run the evidence of an overflow is gone and the
+        // `!isfinite(global_norm)` guard below can never fire. The step would
+        // then proceed with those gradient components silently deleted — a
+        // biased update that never shows up in the loss curve. Count first.
+        if (!skip_this_step) {
+            cudaMemsetAsync(d_nan_cnt, 0, sizeof(unsigned int), cuda::ctx.compute_stream);
+            cudaMemsetAsync(d_inf_cnt, 0, sizeof(unsigned int), cuda::ctx.compute_stream);
+            auto count_t = [&](cuda::CudaTensor& t) {
+                if (t.data && t.numel() > 0)
+                    launch_count_nan_inf_accum((const __half*)t.data, d_nan_cnt,
+                                               d_inf_cnt, t.numel(),
+                                               cuda::ctx.compute_stream);
+            };
+            count_t(grads.d_embed);
+            count_t(grads.d_final_rms);
+            for (int l = 0; l < N_LAYERS; l++) {
+                auto& lg = grads.layers[l];
+                count_t(lg.dwq); count_t(lg.dwk); count_t(lg.dwv); count_t(lg.dwo);
+                count_t(lg.dw1); count_t(lg.dw2); count_t(lg.dw3);
+                count_t(lg.drms_attn); count_t(lg.drms_ffn);
+            }
+            unsigned int h_nan = 0, h_inf = 0;
+            cudaMemcpyAsync(&h_nan, d_nan_cnt, sizeof(unsigned int),
+                            cudaMemcpyDeviceToHost, cuda::ctx.compute_stream);
+            cudaMemcpyAsync(&h_inf, d_inf_cnt, sizeof(unsigned int),
+                            cudaMemcpyDeviceToHost, cuda::ctx.compute_stream);
+            cuda::sync_compute();
+            bool overflow = (h_nan + h_inf) > 0;
+#ifdef USE_DDP
+            if (g_use_ddp)
+                overflow = cuda::ddp::allreduce_scalar_max(overflow ? 1.0f : 0.0f) > 0.5f;
+#endif
+            if (overflow) {
+                float old_scale = g_loss_scale;
+                if (g_loss_scale > 1.0f)
+                    g_loss_scale = std::max(1.0f, g_loss_scale * 0.5f);
+                printf("[OVERFLOW] step=%d nan=%u inf=%u — skipping step, "
+                       "loss_scale %.0f -> %.0f\n",
+                       step, h_nan, h_inf, old_scale, g_loss_scale);
+                clean_steps = 0;
+                skip_this_step = true;
+            } else if (++clean_steps >= 2000 && g_loss_scale < 65536.0f) {
+                g_loss_scale *= 2.0f;
+                clean_steps = 0;
+                printf("[LOSS_SCALE] 2000 clean steps — raising to %.0f\n",
+                       g_loss_scale);
+            }
+        }
 
         // ─── UN-SCALE gradients (divide by loss_scale) ───────────────────────
         if (g_loss_scale != 1.0f) {
@@ -1651,9 +1814,15 @@ printf("║  Safety: %-7s | LR: %-8.1e                             ║\n",
                 &lg.dw1, &lg.dw2, &lg.dw3, &lg.drms_attn, &lg.drms_ffn
             };
             for (int i = 0; i < 9; i++) {
+                // Indices 7 and 8 are rms_attn / rms_ffn. Norm gains start at
+                // exactly 1.0 and have no natural scale pressure, so decay is a
+                // one-directional pull on them; the final norm below already
+                // passes 0.0f, and leaving these two decayed made 48 of the 49
+                // norms behave differently from the 49th.
+                float wd_i = (i >= 7) ? 0.0f : g_wd;
                 cuda::adamw_step(params[base + i], master_params[base + i],
                                  adamw_m[base + i], adamw_v[base + i],
-                                 *layer_grads[i], lr, g_beta1, g_beta2, g_eps, g_wd, step + 1);
+                                 *layer_grads[i], lr, g_beta1, g_beta2, g_eps, wd_i, step + 1);
             }
         }
 

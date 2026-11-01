@@ -1,0 +1,13 @@
+########## rosetta (multi-language) ##########
+[fetch] rosetta -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/code_raw/rosetta.txt  (bucket=code, target 0.2 GB)
+  rows=20,000 kept=12,503 0.02/0.2 GB 0.6 MB/s
+  rows=40,000 kept=25,362 0.03/0.2 GB 1.2 MB/s
+  rows=60,000 kept=36,101 0.05/0.2 GB 1.5 MB/s
+[done] /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/code_raw/rosetta.txt — 0.07 GB, 48,670 docs, 30,343 skipped
+[next] python3 scripts/build_pretrain_corpus.py --out data/corpus_pretrain_v8
+########## code_contests (C++/Java) ##########
+/Users/daffanaufalrachmat/.pyenv/versions/3.12.10/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+[fetch] code_contests -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/code_raw/code_contests.txt  (bucket=code, target 0.7 GB)
+/Users/daffanaufalrachmat/.pyenv/versions/3.12.10/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

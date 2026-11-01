@@ -15,6 +15,7 @@
 #include <cuda_runtime.h>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include <initializer_list>
@@ -78,10 +79,14 @@ public:
         // Fallback to cudaMalloc
         cudaError_t err = cudaMalloc(&data, bytes);
         if (err != cudaSuccess) {
+            // Returning a null tensor here is worse than dying. Kernels then
+            // launch against nullptr and raise cudaErrorIllegalAddress, which
+            // is sticky and is NOT one of the codes the OOM handler in
+            // train_cuda.cu tests for — so the loop continues and the next
+            // checkpoint save overwrites a good checkpoint with zeros.
             fprintf(stderr, "[FATAL] cudaMalloc(%zu bytes) failed: %s\n",
                     bytes, cudaGetErrorString(err));
-            data = nullptr;
-            nbytes = 0;
+            std::abort();
         }
         from_pool = false;
     }

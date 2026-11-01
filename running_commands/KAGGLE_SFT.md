@@ -12,10 +12,10 @@ cp -r $SRC/cuda        $DST/
 cp -r $SRC/scripts     $DST/
 cp -r $SRC/tools       $DST/
 cp -r $SRC/transformer $DST/
-cp -r $SRC/vocab_6     $DST/
+cp -r $SRC/vocab_8     $DST/
 cp -r $SRC/infer_cpp   $DST/
 cp $SRC/gdrive_token.json $DST/
-cp $SRC/bpe_v6.bin     $DST/
+cp $SRC/bpe_v8.bin     $DST/
 cp $SRC/CMakeLists.txt $DST/
 cp $SRC/config.ini     $DST/
 
@@ -65,8 +65,8 @@ proc = subprocess.Popen(
     ['python3', 'scripts/train_pipeline.py',
      '--stages',            'sft',
      '--checkpoint_dir',    '/kaggle/working/checkpoints',
-     '--vocab_dir',         'vocab_6',
-     '--bpe',               'bpe_v6.bin',
+     '--vocab_dir',         'vocab_8',
+     '--bpe',               'bpe_v8.bin',
      '--log_every',         '5',
      '--sft_dir',           'sft_data/sft_translation_focused',
      '--sft_lr',            '3e-5',

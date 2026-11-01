@@ -18,10 +18,10 @@ cp -r $SRC/cuda        $DST/
 cp -r $SRC/scripts     $DST/
 cp -r $SRC/tools       $DST/
 cp -r $SRC/transformer $DST/
-cp -r $SRC/vocab_6     $DST/
+cp -r $SRC/vocab_8     $DST/
 cp -r $SRC/infer_cpp   $DST/
 cp $SRC/gdrive_token.json $DST/
-cp $SRC/bpe_v6.bin     $DST/
+cp $SRC/bpe_v8.bin     $DST/
 cp $SRC/CMakeLists.txt $DST/
 cp $SRC/config.ini     $DST/
 
@@ -109,12 +109,12 @@ proc = subprocess.Popen(
      '--auto_continue',
      '--stages',            'pretrain,sft',
      '--checkpoint_dir',    '/kaggle/working/checkpoints',
-     '--data_dir',          '/kaggle/input/datasets/naufalrachmat/datatraining/data/corpus_final',
-     '--vocab_dir',         'vocab_6',
-     '--bpe',               'bpe_v6.bin',
+     '--data_dir',          '/kaggle/input/datasets/naufalrachmat/datatraining/data/corpus_pretrain_v8',
+     '--vocab_dir',         'vocab_8',
+     '--bpe',               'bpe_v8.bin',
      # Pretrain
-     '--batch_size',        '35',
-     '--max_seq',           '256',
+     '--batch_size',        '16',
+     '--max_seq',           '512',
      '--max_tokens',        '2000000000',
      '--lr',                '1.4e-4',
      '--grad_clip',         '5.0',

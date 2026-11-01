@@ -188,6 +188,28 @@ inline void sync() {
     cudaStreamSynchronize(state().nccl_stream);
 }
 
+// ─── AllReduce one scalar with MAX, for decisions that must match on every
+// rank. Each rank trains on a different data slice (the dataset seed is offset
+// by rank), so any "should I skip this step" test computed from local loss can
+// come out differently on each rank. If one rank then enters a collective and
+// the other does not, NCCL has no timeout or watchdog here and both processes
+// wedge forever. Reduce the flag first, branch second.
+inline float allreduce_scalar_max(float v) {
+    auto& s = state();
+    static float* dbuf = nullptr;
+    static float* hbuf = nullptr;
+    if (!dbuf) {
+        cudaMalloc((void**)&dbuf, sizeof(float));
+        cudaMallocHost((void**)&hbuf, sizeof(float));
+    }
+    *hbuf = v;
+    cudaMemcpyAsync(dbuf, hbuf, sizeof(float), cudaMemcpyHostToDevice, s.nccl_stream);
+    ncclAllReduce(dbuf, dbuf, 1, ncclFloat, ncclMax, s.comm, s.nccl_stream);
+    cudaMemcpyAsync(hbuf, dbuf, sizeof(float), cudaMemcpyDeviceToHost, s.nccl_stream);
+    cudaStreamSynchronize(s.nccl_stream);
+    return *hbuf;
+}
+
 // ─── Scale FP16 buffer by 1/world_size (average after SUM) ────────────────
 inline void average_grad(CudaTensor& grad) {
     if (grad.numel() == 0 || !grad.data) return;

@@ -73,6 +73,20 @@ SPECS = {
     # every row false; the category is named for what the property means.
     "species_parent":    ("wd:Q16521",   "P171",  "item",  25, True),
     "planet_star":       ("wd:Q634",     "P397",  "item",  10, True),
+    # --- people (extended) --------------------------------------------------
+    "person_birthplace": ("wd:Q5",       "P19",   "item",  45, True),
+    "person_deathyear":  ("wd:Q5",       "P570",  "date",  45, True),
+    "person_educated":   ("wd:Q5",       "P69",   "item",  45, False),
+    # --- organisations (extended) --------------------------------------------
+    "company_founded":   ("wd:Q4830453", "P571",  "date",  25, True),
+    "company_industry":  ("wd:Q4830453", "P452",  "item",  25, True),
+    "company_hq":        ("wd:Q4830453", "P159",  "item",  25, False),
+    # --- geography (extended) -------------------------------------------------
+    "mountain_range":    ("wd:Q8502",    "P4552", "item",  15, True),
+    "city_region":       ("wd:Q515",     "P131",  "item",  20, False),
+    # --- science (extended) ----------------------------------------------------
+    "species_rank":      ("wd:Q16521",   "P105",  "item",  25, True),
+    "star_constellation":("wd:Q523",     "P59",   "item",  10, True),
 }
 
 # Rendering unit for SI-normalised quantities, per property.

@@ -1,0 +1,15 @@
+########## tier1 @ 1000 exposures ##########
+loaded 4580 facts from data/wikidata_facts_tier1.tsv (0 skipped: no template or placeholder element)
+[en] 1,040,750 documents, 270 MB, ~76M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_en.txt
+[ja] 1,040,750 documents, 350 MB, ~110M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_ja.txt
+########## expanded @ 150 exposures (append) ##########
+loaded 44973 facts from data/wikidata_facts_expanded.tsv (0 skipped: no template or placeholder element)
+[en] 1,777,724 documents, 353 MB, ~100M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_en.txt
+[ja] 1,777,724 documents, 524 MB, ~165M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_ja.txt
+FACT GENERATION DONE
+total 3290776
+drwxr-xr-x@  5 daffanaufalrachmat  staff        160 Aug 27 23:11 .
+drwxr-xr-x@ 35 daffanaufalrachmat  staff       1120 Sep  5 16:07 ..
+-rw-r--r--@  1 daffanaufalrachmat  staff  622298558 Sep  5 17:30 facts_en.txt
+-rw-r--r--@  1 daffanaufalrachmat  staff  158138800 Aug 28 01:10 facts_id.txt
+-rw-r--r--@  1 daffanaufalrachmat  staff  873935768 Sep  5 17:30 facts_ja.txt

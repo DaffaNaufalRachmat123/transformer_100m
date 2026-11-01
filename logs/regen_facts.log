@@ -1,0 +1,7 @@
+loaded 4580 facts from data/wikidata_facts_tier1.tsv (0 skipped: no template or placeholder element)
+[en] 1,040,750 documents, 270 MB, ~76M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_en.txt
+[ja] 1,040,750 documents, 350 MB, ~110M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_ja.txt
+loaded 44973 facts from data/wikidata_facts_expanded.tsv (0 skipped: no template or placeholder element)
+[en] 1,777,724 documents, 351 MB, ~99M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_en.txt
+[ja] 1,777,724 documents, 520 MB, ~163M tokens -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_facts/facts_ja.txt
+FACTS REGEN DONE

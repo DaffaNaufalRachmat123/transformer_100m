@@ -1,0 +1,82 @@
+[RESUME] 44973 rows already in data/wikidata_facts_expanded.tsv
+
+[CAT] person_birthplace  ('wd:Q5', 'P19', 'item', 45, True)
+    person_birthplace: 1996 rows (offset 0)
+    [retry 1] JSONDecodeError: Expecting value: line 22224 column 19 (char 505802) — waiting 3s
+    [retry 2] JSONDecodeError: Expecting value: line 22224 column 19 (char 505802) — waiting 5s
+    [retry 3] JSONDecodeError: Expecting value: line 22224 column 19 (char 505802) — waiting 11s
+    [retry 4] JSONDecodeError: Expecting value: line 22224 column 19 (char 505802) — waiting 29s
+    [retry 5] JSONDecodeError: Expecting value: line 22224 column 19 (char 505802) — waiting 83s
+    [retry 6] JSONDecodeError: Expecting value: line 22224 column 19 (char 505802) — waiting 90s
+  [CAT] person_birthplace: +1996 new (total 1996)
+
+[CAT] person_deathyear  ('wd:Q5', 'P570', 'date', 45, True)
+    person_deathyear: 1683 rows (offset 0)
+    person_deathyear: 3596 rows (offset 2000)
+    [retry 1] JSONDecodeError: Invalid control character at: line 17748 column 43 (char 455932) — waiting 3s
+    [retry 2] JSONDecodeError: Invalid control character at: line 17748 column 43 (char 455932) — waiting 5s
+    [retry 3] JSONDecodeError: Invalid control character at: line 17748 column 43 (char 455932) — waiting 11s
+    [retry 4] JSONDecodeError: Invalid control character at: line 17748 column 43 (char 455932) — waiting 29s
+    [retry 5] JSONDecodeError: Invalid control character at: line 17748 column 43 (char 455932) — waiting 83s
+    [retry 6] JSONDecodeError: Invalid control character at: line 17748 column 43 (char 455932) — waiting 90s
+  [CAT] person_deathyear: +3596 new (total 5592)
+
+[CAT] person_educated  ('wd:Q5', 'P69', 'item', 45, False)
+    person_educated: 1651 rows (offset 0)
+    person_educated: 2935 rows (offset 2000)
+    [retry 1] HTTP 504 — waiting 3s
+    [retry 2] HTTP 502 — waiting 5s
+    person_educated: 4214 rows (offset 4000)
+    [retry 1] HTTP 504 — waiting 3s
+    person_educated: 5346 rows (offset 6000)
+    [retry 1] HTTP 504 — waiting 3s
+    [retry 2] HTTP 504 — waiting 5s
+    [retry 3] HTTP 502 — waiting 11s
+    [retry 4] HTTP 502 — waiting 29s
+    [retry 5] HTTP 504 — waiting 83s
+    [retry 6] HTTP 502 — waiting 90s
+  [CAT] person_educated: +5346 new (total 10938)
+
+[CAT] company_founded  ('wd:Q4830453', 'P571', 'date', 25, True)
+    company_founded: 1081 rows (offset 0)
+  [CAT] company_founded: +1081 new (total 12019)
+
+[CAT] company_industry  ('wd:Q4830453', 'P452', 'item', 25, True)
+    company_industry: 661 rows (offset 0)
+  [CAT] company_industry: +661 new (total 12680)
+
+[CAT] company_hq  ('wd:Q4830453', 'P159', 'item', 25, False)
+    company_hq: 1126 rows (offset 0)
+  [CAT] company_hq: +1126 new (total 13806)
+
+[CAT] mountain_range  ('wd:Q8502', 'P4552', 'item', 15, True)
+    mountain_range: 696 rows (offset 0)
+  [CAT] mountain_range: +696 new (total 14502)
+
+[CAT] city_region  ('wd:Q515', 'P131', 'item', 20, False)
+    city_region: 1778 rows (offset 0)
+    city_region: 2303 rows (offset 2000)
+  [CAT] city_region: +2303 new (total 16805)
+
+[CAT] species_rank  ('wd:Q16521', 'P105', 'item', 25, True)
+    species_rank: 1987 rows (offset 0)
+    species_rank: 3616 rows (offset 2000)
+    species_rank: 5113 rows (offset 4000)
+    [retry 1] JSONDecodeError: Expecting value: line 34983 column 17 (char 787214) — waiting 3s
+    [retry 2] JSONDecodeError: Expecting value: line 34983 column 17 (char 787214) — waiting 5s
+    [retry 3] JSONDecodeError: Expecting value: line 34983 column 17 (char 787214) — waiting 11s
+    [retry 4] JSONDecodeError: Expecting value: line 34983 column 17 (char 787214) — waiting 29s
+    [retry 5] JSONDecodeError: Expecting value: line 34983 column 17 (char 787214) — waiting 83s
+    [retry 6] JSONDecodeError: Expecting value: line 34983 column 17 (char 787214) — waiting 90s
+  [CAT] species_rank: +5113 new (total 21918)
+
+[CAT] star_constellation  ('wd:Q523', 'P59', 'item', 10, True)
+    [retry 1] IncompleteRead: IncompleteRead(0 bytes read) — waiting 3s
+    [retry 2] IncompleteRead: IncompleteRead(0 bytes read) — waiting 5s
+    [retry 3] IncompleteRead: IncompleteRead(0 bytes read) — waiting 11s
+    [retry 4] JSONDecodeError: Expecting property name enclosed in double quotes: line 13252 column 7 (char 299215) — waiting 29s
+    [retry 5] JSONDecodeError: Expecting ',' delimiter: line 14635 column 4 (char 330688) — waiting 83s
+    [retry 6] JSONDecodeError: Expecting ',' delimiter: line 14635 column 4 (char 330688) — waiting 90s
+  [CAT] star_constellation: +0 new (total 21918)
+
+[DONE] +21918 facts -> data/wikidata_facts_expanded.tsv

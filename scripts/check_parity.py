@@ -89,7 +89,7 @@ def main():
     ap.add_argument("--safetensors", default="translation_resources/facts/ckpt_sft_final.safetensors")
     ap.add_argument("--gguf", default="gguf/trilingual-204m-facts-f16.gguf")
     ap.add_argument("--config", default="config_204m.json")
-    ap.add_argument("--vocab", default="vocab_6")
+    ap.add_argument("--vocab", default="vocab_7")
     ap.add_argument("--infer", default="build_infer/infer")
     ap.add_argument("--runner", default="build_infer/llama_runner")
     ap.add_argument("--n", type=int, default=200)

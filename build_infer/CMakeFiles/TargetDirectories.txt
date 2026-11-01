@@ -1,3 +1,0 @@
-/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/build_infer/CMakeFiles/infer.dir
-/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/build_infer/CMakeFiles/edit_cache.dir
-/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/build_infer/CMakeFiles/rebuild_cache.dir

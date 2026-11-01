@@ -16,7 +16,7 @@ Setup (one-time, run locally):
 import argparse, json, os, sys, time, zipfile, shutil, tempfile
 
 # ─── HARDCODED CONFIG ─────────────────────────────────────────────────────────
-GDRIVE_FOLDER_ID = '1jIOCnnKPVEI2doK1Ol0HXTiXG9RlmAu1'
+GDRIVE_FOLDER_ID = '1tVYqa2W5lxloMEE6yXQhc_vpj6q6O18Y'
 # OAuth2 credentials (from Google Cloud Console → OAuth 2.0 Client ID → Desktop)
 OAUTH_CLIENT_ID     = '117015903667205033756'
 OAUTH_CLIENT_SECRET = ''  # Fill after creating OAuth Desktop client
@@ -83,7 +83,10 @@ def do_auth_flow():
         sys.exit(1)
 
     flow = InstalledAppFlow.from_client_secrets_file(client_secret, SCOPES)
-    creds = flow.run_local_server(port=0)
+    # Force the Google account picker: without prompt=select_account, the
+    # browser silently reuses whatever account is already logged in, so a
+    # re-auth "for the new Gmail" would silently land on the old one.
+    creds = flow.run_local_server(port=0, prompt="select_account")
 
     token_path = TOKEN_FILENAME
     with open(token_path, 'w') as f:
@@ -205,9 +208,6 @@ def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=F
         print(f"[UPLOAD] Run: python3 scripts/upload_gdrive.py --auth", file=sys.stderr)
         return False
 
-    if folder_id is None:
-        folder_id = GDRIVE_FOLDER_ID
-
     # Authenticate via OAuth2 refresh token
     try:
         from googleapiclient.discovery import build
@@ -218,6 +218,9 @@ def upload(ckpt_dir, step, tokens, folder_id=None, use_zip=False, prepare_only=F
     except Exception as e:
         print(f"[UPLOAD] Auth failed: {e}", file=sys.stderr)
         return False
+
+    if folder_id is None:
+        folder_id = GDRIVE_FOLDER_ID
 
     if use_zip:
         # ─── ZIP mode: snapshot to unique temp dir + compress + upload ────
@@ -322,15 +325,14 @@ def upload_eval_log(path, step, tokens, folder_id=None):
                   file=sys.stderr)
             return False
 
-        if folder_id is None:
-            folder_id = GDRIVE_FOLDER_ID
-
         from googleapiclient.discovery import build
         creds = get_credentials()
         if creds is None:
             print("[EVAL-UPLOAD] No credentials — skipping", file=sys.stderr)
             return False
         service = build('drive', 'v3', credentials=creds, cache_discovery=False)
+        if folder_id is None:
+            folder_id = GDRIVE_FOLDER_ID
 
         # Fixed remote name -> upload_file_to_drive() updates the existing file
         # instead of creating duplicates, so Drive keeps one growing history.

@@ -22,3 +22,4 @@ logs/expand_facts.log
 bpe_checkpoints/
 logs/expand_facts_v2.log
 logs/expand_facts_v3.log
+transformer_492m_pretrain_ready.zip

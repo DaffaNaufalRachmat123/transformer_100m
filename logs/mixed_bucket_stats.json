@@ -1,17 +1,18 @@
 {
-  "inject_bytes": 546765600,
-  "parallel": {
-    "en_id": {
-      "docs": 800000,
-      "bytes": 64610362
-    },
-    "en_ja": {
-      "docs": 800000,
-      "bytes": 65040264
-    },
-    "ja_id": {
-      "docs": 9808,
-      "bytes": 755776
-    }
-  }
+  "pairs": 9336144,
+  "per_source": {
+    "data/parallel_en_ja.tsv": 1751303,
+    "data/parallel_raw/en-ja/par_tatoeba.txt": 19434,
+    "data/parallel_raw/en-ja/par_talks.txt": 346568,
+    "data/parallel_raw/en-ja/par_news.txt": 544,
+    "data/parallel_raw/en-ja/par_opus100.txt": 216450,
+    "data/parallel_raw/en-ja/par_subs.txt": 1338,
+    "data/parallel_raw/en-ja/par_wikimatrix.txt": 88143,
+    "data/parallel_raw/en-ja/par_ccmatrix_labse.txt": 6471222,
+    "data/parallel_raw/en-ja/par_ccmatrix_cand.txt": 441142
+  },
+  "documents": 1867229,
+  "bytes": 1572877660,
+  "est_tokens": 469515719,
+  "path": "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/corpus_inject_parallel/parallel_enja.txt"
 }

@@ -47,7 +47,7 @@ def main():
     ap.add_argument("mode", choices=sorted(MODES))
     ap.add_argument("text", nargs="*", help="input text (omit with --repl/--file)")
     ap.add_argument("--model", default="", help="override the .gguf model")
-    ap.add_argument("--vocab", default="vocab_6")
+    ap.add_argument("--vocab", default="vocab_7")
     ap.add_argument("--runner", default="build_infer/llama_runner")
     ap.add_argument("--n-predict", type=int, default=48)
     ap.add_argument("--ctx", type=int, default=512)

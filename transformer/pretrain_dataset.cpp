@@ -23,7 +23,15 @@ PretrainDataset::PretrainDataset(const PretrainDatasetConfig& cfg)
 {
     if (cfg_.curriculum.empty())
         throw std::invalid_argument("PretrainDataset: curriculum is empty");
-    cfg_.seq_len = cfg_.curriculum[0].seq_len;
+    // cfg.seq_len is authoritative. Overwriting it with curriculum[0].seq_len
+    // (256) silently broke every run that passed --max_seq != 256: the training
+    // loop sizes its batch buffer as B*max_seq while next_batch() strides by
+    // cfg_.seq_len, so the last (max_seq - 256) tokens of every sequence stayed
+    // at their zero-initialised value and the model trained on runs of token 0.
+    if (cfg_.seq_len == 0) cfg_.seq_len = cfg_.curriculum[0].seq_len;
+    for (uint32_t i = 0; i < cfg_.curriculum.size(); ++i) {
+        if (cfg_.curriculum[i].seq_len == cfg_.seq_len) { stage_idx_ = i; break; }
+    }
 }
 
 PretrainDataset::~PretrainDataset() {
@@ -167,9 +175,30 @@ bool PretrainDataset::next_batch(uint32_t* tokens_out, uint32_t n_samples) {
 }
 
 // ---------------------------------------------------------------------------
+// Does this corpus file use a document-separator line? Probing the head is
+// enough: the writer emits one separator per document, so a corpus that uses
+// them always has one within the first few documents.
+static bool file_uses_separator(const std::string& path,
+                                const std::string& sep,
+                                size_t probe_bytes = 1u << 20) {
+    if (sep.empty()) return false;
+    std::ifstream f(path);
+    if (!f) return false;
+    std::string line;
+    size_t read = 0;
+    while (read < probe_bytes && std::getline(f, line)) {
+        read += line.size() + 1;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line == sep) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 void PretrainDataset::discover_files() {
     files_.clear();
     std::unordered_set<std::string> seen_targets;
+    std::vector<std::string> broken_links;
     size_t skipped_aliases = 0;
 
     std::vector<std::string> lang_dirs = {
@@ -177,7 +206,9 @@ void PretrainDataset::discover_files() {
     };
 
     // Mode detection:
-    //  - six-bucket 1B build (code/ AND math/ present):
+    //  - code/ AND math/ present, no indonesian/ (EN/JA/Code/Math build):
+    //    EN 0.40 / JA 0.30 / Code 0.20 / Math 0.10
+    //  - code/ AND math/ AND indonesian/ (legacy six-bucket 1B build):
     //    EN 0.35 / JA 0.25 / ID 0.20 / Code 0.09 / Math 0.03 / Mixed 0.08
     //  - trilingual (indonesian/ with a usable file): EN 0.30 / JA 0.25 / ID 0.45
     //  - bilingual default: EN 0.55 / JA 0.45
@@ -209,13 +240,41 @@ void PretrainDataset::discover_files() {
         }
     }
     const bool has_code_math = has_code && has_math;
-    if (has_code_math) {
-        std::cout << "[Dataset] Code+Math corpora detected — six-bucket 1B "
-                     "weights (EN 0.35 / JA 0.25 / ID 0.20 / Code 0.09 / "
-                     "Math 0.03 / Mixed 0.08)\n";
+    if (has_code_math && !has_indonesian) {
+        std::cout << "[Dataset] EN/JA/Code/Math corpus detected — quad weights\n";
+    } else if (has_code_math) {
+        std::cout << "[Dataset] Code+Math corpora detected — six-bucket 1B weights\n";
     } else if (has_indonesian) {
         std::cout << "[Dataset] Indonesian corpus detected — trilingual weights "
                      "(EN 0.30 / JA 0.25 / ID 0.45)\n";
+    }
+    // The TW_W_* overrides are only consulted in the code+math branch of
+    // lang_sample_weight. One empty bucket therefore turns a five-bucket 10B
+    // run into a bilingual EN/JA one and ignores every weight the operator set,
+    // with no output beyond a "Skipping missing dir" line. Say so loudly.
+    if (!has_code_math) {
+        for (const char* v : {"TW_W_EN", "TW_W_JA", "TW_W_CODE", "TW_W_MATH",
+                              "TW_W_MIXED"}) {
+            if (std::getenv(v)) {
+                std::cout << "[Dataset] !! " << v << " is set but code/ or math/ "
+                             "is empty — ALL TW_W_* overrides are being IGNORED "
+                             "and this run is falling back to EN 0.55 / JA 0.45\n";
+                break;
+            }
+        }
+    }
+    if (has_code_math) {
+        std::cout << "[Dataset] weights:";
+        for (auto [name, l] : {std::pair{"en", Language::English},
+                               {"ja", Language::Japanese},
+                               {"id", Language::Indonesian},
+                               {"code", Language::Code},
+                               {"math", Language::Math},
+                               {"mixed", Language::Mixed}}) {
+            float w = lang_sample_weight(l, stage_idx_, has_indonesian, true);
+            if (w > 0.0f) std::cout << " " << name << "=" << w;
+        }
+        std::cout << "\n";
     }
 
     for (const auto& dir_name : lang_dirs) {
@@ -229,9 +288,14 @@ void PretrainDataset::discover_files() {
                                            has_code_math);
 
         for (const auto& entry : fs::directory_iterator(dir)) {
-            if (!entry.is_regular_file()) continue;
             std::string ext = entry.path().extension().string();
             if (ext != ".txt" && ext != ".jsonl" && ext != ".tsv") continue;
+            if (!entry.is_regular_file()) {
+                // is_regular_file() is false for a dangling symlink, which is
+                // how a whole bucket can vanish without a single message.
+                broken_links.push_back(entry.path().string());
+                continue;
+            }
 
             std::error_code ec;
             fs::path resolved = fs::weakly_canonical(entry.path(), ec);
@@ -259,6 +323,7 @@ void PretrainDataset::discover_files() {
             cf.lang      = lang;
             cf.weight    = weight;
             cf.byte_size = byte_size;
+            cf.doc_mode  = file_uses_separator(resolved_str, cfg_.doc_separator);
             files_.push_back(std::move(cf));
         }
     }
@@ -273,7 +338,27 @@ void PretrainDataset::discover_files() {
     }
     std::cout << "\n";
     for (const auto& f : files_) {
-        std::cout << "  " << f.path << "  (" << f.byte_size/1024/1024 << " MB)\n";
+        std::cout << "  " << f.path << "  (" << f.byte_size/1024/1024 << " MB, "
+                  << (f.doc_mode ? "doc-mode" : "line-mode") << ")\n";
+    }
+    if (!broken_links.empty()) {
+        std::cerr << "[Dataset] WARNING: " << broken_links.size()
+                  << " unreadable entries (dangling symlink / permission):\n";
+        for (const auto& b : broken_links) std::cerr << "    " << b << "\n";
+    }
+    // A bucket directory that exists but contributes no bytes silently changes
+    // the sampling mode (this is how the math bucket disappeared: its only file
+    // was a dangling symlink, so has_math stayed false and the six-bucket
+    // weights never activated).
+    for (const auto& dir_name : lang_dirs) {
+        fs::path dir = fs::path(cfg_.corpus_root) / dir_name;
+        if (!fs::exists(dir)) continue;
+        Language l = lang_from_dirname(dir_name);
+        uint64_t bytes = 0;
+        for (const auto& f : files_) if (f.lang == l) bytes += f.byte_size;
+        if (bytes == 0)
+            std::cerr << "[Dataset] WARNING: bucket '" << dir_name
+                      << "' exists but has 0 usable bytes — it will never be sampled\n";
     }
 }
 
@@ -404,44 +489,79 @@ std::shared_ptr<Shard> PretrainDataset::load_shard() {
     std::vector<uint32_t> seq(seq_len);
 
     uint64_t n_lines = 0;
-    while (shard->n_samples < target_samples && std::getline(f, line)) {
-        if (line.empty()) continue;
-        // Limit to 1024 bytes to prevent BPE O(n²) blow-up on pathological
-        // lines with no whitespace (e.g. base64 data, minified code, math).
-        // corpus_final has lines up to 100K+ chars; 1024 is safe and still
-        // captures complete sentences for most natural-language content.
-        //
-        // IMPORTANT: this is a byte-level cut, so for multi-byte UTF-8
-        // languages (JA/KO especially — avg line length 5-8KB, so the
-        // vast majority of their lines get truncated here) a naive
-        // resize() can slice a multi-byte codepoint in half, leaving a
-        // dangling continuation byte (0x80-0xBF) at the tail. The BPE
-        // encoder then falls back to a rare/unnatural byte-level token
-        // for that garbage tail right before the next document's BOS —
-        // and this corruption rate roughly doubles per training sample
-        // whenever the packer concatenates more documents per sequence
-        // (i.e. every time seq_len doubles in the curriculum). Trim back
-        // to the last valid UTF-8 codepoint boundary instead.
-        if (line.size() > 1024) {
-            size_t cut = 1024;
-            // Walk backwards while we're sitting on a UTF-8 continuation
-            // byte (10xxxxxx) — back up until we reach a leading byte
-            // (0xxxxxxx ASCII, or a 11xxxxxx multi-byte lead byte).
-            while (cut > 0 && (static_cast<unsigned char>(line[cut]) & 0xC0) == 0x80) {
-                --cut;
-            }
-            line.resize(cut);
-        }
-        tokenize_line(line, ids);
-        if (ids.empty()) continue;
-        packer.feed(ids);
-        ++n_lines;
+    uint64_t n_docs  = 0;
 
-        // Pop completed sequences immediately so shard->n_samples advances
-        while (packer.has_sequence() && shard->n_samples < target_samples) {
-            packer.pop_sequence(seq.data());
-            shard->tokens.insert(shard->tokens.end(), seq.begin(), seq.end());
-            ++shard->n_samples;
+    // Tokenize one document. Documents longer than max_doc_bytes are SPLIT at a
+    // line boundary (falling back to a UTF-8 codepoint boundary), never
+    // truncated — the previous 1024-byte hard cut discarded the tail of ~88% of
+    // fineweb_edu_extra lines and ~81% of culturax_ja lines.
+    const size_t max_doc = std::max<size_t>(256, cfg_.max_doc_bytes);
+    auto emit_doc = [&](std::string& doc) {
+        if (doc.empty()) return;
+        size_t pos = 0;
+        while (pos < doc.size() && shard->n_samples < target_samples) {
+            size_t take = std::min(max_doc, doc.size() - pos);
+            if (pos + take < doc.size()) {
+                // Prefer to break on the last newline inside the window so a
+                // source file is never split mid-statement.
+                size_t nl = doc.rfind('\n', pos + take);
+                if (nl != std::string::npos && nl > pos + max_doc / 2) {
+                    take = nl - pos;
+                } else {
+                    // Otherwise back up to a UTF-8 lead byte so no codepoint is
+                    // cut in half (a dangling continuation byte tokenizes to a
+                    // rare byte-level token right before the next document).
+                    while (take > 1 &&
+                           (static_cast<unsigned char>(doc[pos + take]) & 0xC0) == 0x80)
+                        --take;
+                }
+            }
+            std::string chunk = doc.substr(pos, take);
+            pos += take;
+            while (pos < doc.size() && doc[pos] == '\n') ++pos;  // drop the break itself
+            tokenize_line(chunk, ids);
+            if (ids.empty()) continue;
+            packer.feed(ids);
+            ++n_docs;
+            while (packer.has_sequence() && shard->n_samples < target_samples) {
+                packer.pop_sequence(seq.data());
+                shard->tokens.insert(shard->tokens.end(), seq.begin(), seq.end());
+                ++shard->n_samples;
+            }
+        }
+        doc.clear();
+    };
+
+    if (cf.doc_mode) {
+        // Documents span multiple lines and end at a separator line. Blank
+        // lines are content here (indentation/structure in code and math), so
+        // they are kept verbatim.
+        std::string doc;
+        doc.reserve(max_doc + 1024);
+        // The random seek above lands mid-document; skip to the next separator
+        // so we never train on a half document.
+        bool synced = (f.tellg() == std::streampos(0));
+        while (shard->n_samples < target_samples && std::getline(f, line)) {
+            ++n_lines;
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line == cfg_.doc_separator) {
+                if (!synced) { synced = true; doc.clear(); continue; }
+                emit_doc(doc);
+                continue;
+            }
+            if (!synced) continue;
+            if (doc.size() + line.size() + 1 > (size_t)max_doc * 8) emit_doc(doc);
+            if (!doc.empty()) doc += '\n';
+            doc += line;
+        }
+        emit_doc(doc);
+    } else {
+        // Legacy layout: one document per line.
+        while (shard->n_samples < target_samples && std::getline(f, line)) {
+            if (line.empty()) continue;
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            ++n_lines;
+            emit_doc(line);
         }
     }
 
@@ -450,7 +570,9 @@ std::shared_ptr<Shard> PretrainDataset::load_shard() {
     if (n_lines > 0 && !showed_nlines) {
         showed_nlines = true;
         std::cout << "[prefetch] file=" << cf.path.substr(cf.path.find_last_of('/')+1)
+                  << (cf.doc_mode ? " (doc-mode)" : " (line-mode)")
                   << " lines=" << n_lines
+                  << " docs=" << n_docs
                   << " samples=" << shard->n_samples
                   << "\n" << std::flush;
     }

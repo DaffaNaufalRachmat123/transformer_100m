@@ -20,8 +20,8 @@ proc = subprocess.Popen(
      '--auto_continue',
      '--stages',            'sft,dpo',
      '--checkpoint_dir',    'checkpoints',
-     '--vocab_dir',         'vocab_6',
-     '--bpe',               'bpe_v6.bin',
+     '--vocab_dir',         'vocab_8',
+     '--bpe',               'bpe_v8.bin',
      '--log_every',         '5',
      # SFT
      '--sft_dir',           'sft_data/sft_translation_focused',

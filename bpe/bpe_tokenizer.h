@@ -275,4 +275,5 @@ private:
 
     std::vector<std::string> pretokenize(const std::string& text) const;
     std::vector<TokenID>     encode_word(const std::string& word) const;
+    std::vector<TokenID>     encode_chunk(std::string_view word) const;
 };

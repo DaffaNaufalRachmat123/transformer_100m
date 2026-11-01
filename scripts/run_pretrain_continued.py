@@ -32,7 +32,7 @@ cmd = [
     "--vocab_dir",         "vocab_6",
     "--bpe",               "bpe_v6.bin",
     "--batch_size",        "35",
-    "--max_seq",           "256",
+    "--seq",               "256",
     "--max_tokens",        "4500000000",
     "--lr",                "7e-5",
     "--grad_clip",         "5.0",

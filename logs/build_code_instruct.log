@@ -1,0 +1,25 @@
+loading held-out sets for decontamination
+  decontam: eval_data/humaneval.jsonl -> 164 problems
+  decontam: eval_data/mbpp_heldout.jsonl -> 497 problems
+  dropped 231 boilerplate assertion n-grams seen in >1 problem
+  123 distinctive function names, 5,663 assertion n-grams
+  oss_instruct: 10,000 kept (148 leaked so far)
+  oss_instruct: 20,000 kept (271 leaked so far)
+  oss_instruct: 30,000 kept (389 leaked so far)
+  oss_instruct: 40,000 kept (507 leaked so far)
+  oss_instruct: 50,000 kept (626 leaked so far)
+  oss_instruct: 60,000 kept (743 leaked so far)
+  oss_instruct: 70,000 kept (860 leaked so far)
+  oss_instruct: 71,532 rows
+  evol_instruct: 10,000 kept (1,560 leaked so far)
+  evol_instruct: 20,000 kept (2,271 leaked so far)
+  evol_instruct: 30,000 kept (2,967 leaked so far)
+  evol_instruct: 40,000 kept (3,682 leaked so far)
+  evol_instruct: 50,000 kept (4,354 leaked so far)
+  evol_instruct: 60,000 kept (5,038 leaked so far)
+  evol_instruct: 70,000 kept (5,745 leaked so far)
+  evol_instruct: 78,468 rows
+
+[done] /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/sft_data/sft_code_instruct  150,000 rows, 6,331 dropped as held-out leaks
+/Users/daffanaufalrachmat/.pyenv/versions/3.12.10/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

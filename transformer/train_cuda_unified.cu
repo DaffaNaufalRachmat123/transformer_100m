@@ -821,6 +821,38 @@ int main(int argc, char** argv) {
     }
     printf("[TOK] Loaded: vocab_size=%zu\n", tok.vocab_size());
 
+    // Same probe as train_cuda.cu. vocab_7 and vocab_8 are both 49152 tokens,
+    // so nothing else here can tell them apart, and SFT-ing a pretrained
+    // checkpoint under the wrong tokenizer silently destroys it.
+    {
+        static const char* kProbe =
+            "The capital of Japan is Tokyo.\n日本語のテキストです。コンピュータ\n"
+            "def f(x):\n    return x + 1\n\\frac{1}{2} + \\sqrt{3} = 0";
+        auto ids = tok.encode(std::string(kProbe), false, false);
+        uint64_t h = 1469598103934665603ULL;
+        for (auto id : ids) {
+            uint64_t v = (uint64_t)id;
+            for (int b = 0; b < 4; b++) { h ^= (v >> (8 * b)) & 0xFF; h *= 1099511628211ULL; }
+        }
+        printf("[TOK] fingerprint=%016llx (%zu probe tokens)\n",
+               (unsigned long long)h, ids.size());
+        std::ifstream sf(g_checkpoint_dir + "/train_state.txt");
+        std::string line;
+        while (sf && std::getline(sf, line)) {
+            if (line.rfind("tok_fingerprint=", 0) != 0) continue;
+            uint64_t saved = strtoull(line.substr(16).c_str(), nullptr, 10);
+            if (saved != 0 && saved != h) {
+                fprintf(stderr,
+                    "\n[ERR] Tokenizer mismatch against the pretrained checkpoint.\n"
+                    "      checkpoint fingerprint %016llx, this run %016llx\n"
+                    "      Point --vocab_dir/--bpe at the tokenizer pretraining used.\n",
+                    (unsigned long long)saved, (unsigned long long)h);
+                return 1;
+            }
+            break;
+        }
+    }
+
     TOK_BOS = tok.bos_id(); TOK_EOS = tok.eos_id(); TOK_PAD = tok.pad_id();
     if (TOK_PAD < 0) TOK_PAD = TOK_BOS;
     TOK_SYSTEM = (int)tok.special_id(SpecialTokens::SYSTEM);
@@ -835,7 +867,7 @@ int main(int argc, char** argv) {
                 "[ERR] Tokenizer special IDs invalid: bos=%d eos=%d pad=%d system=%d user=%d assistant=%d end=%d\n",
                 TOK_BOS, TOK_EOS, TOK_PAD, TOK_SYSTEM, TOK_USER, TOK_ASSISTANT, TOK_END);
         fprintf(stderr,
-                "[ERR] Ensure the runtime can load the matching bpe_v6.bin or vocab_6 files before Stage %d.\n",
+                "[ERR] Ensure the runtime can load the matching bpe_v8.bin or vocab_8 files before Stage %d.\n",
                 g_stage);
         return 1;
     }

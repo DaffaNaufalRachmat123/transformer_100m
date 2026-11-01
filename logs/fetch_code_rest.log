@@ -1,0 +1,9 @@
+[fetch] csn_javascript -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/code_raw/csn_javascript.txt  (bucket=code, target 0.4 GB)
+  rows=20,000 kept=13,637 0.02/0.4 GB 0.4 MB/s
+  rows=40,000 kept=27,242 0.03/0.4 GB 0.2 MB/s
+  rows=60,000 kept=41,351 0.05/0.4 GB 0.3 MB/s
+  rows=80,000 kept=54,825 0.07/0.4 GB 0.2 MB/s
+  rows=100,000 kept=68,177 0.09/0.4 GB 0.2 MB/s
+Terminated: 15             python3 -u scripts/fetch_corpus.py --dataset csn_javascript --max_bytes 400000000
+/Users/daffanaufalrachmat/.pyenv/versions/3.12.10/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

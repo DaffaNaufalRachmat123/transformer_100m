@@ -1,0 +1,29 @@
+[fetch] openwebmath -> /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/math_raw/openwebmath.txt  (bucket=math, target 3.2 GB)
+  rows=20,000 kept=15,431 0.13/3.2 GB 4.5 MB/s
+  rows=40,000 kept=30,826 0.25/3.2 GB 5.1 MB/s
+  rows=60,000 kept=46,282 0.38/3.2 GB 5.1 MB/s
+  rows=80,000 kept=61,746 0.51/3.2 GB 5.3 MB/s
+  rows=100,000 kept=77,264 0.64/3.2 GB 4.0 MB/s
+  rows=120,000 kept=92,789 0.77/3.2 GB 3.3 MB/s
+  rows=140,000 kept=108,199 0.90/3.2 GB 3.5 MB/s
+  rows=160,000 kept=123,711 1.02/3.2 GB 3.8 MB/s
+  rows=180,000 kept=139,139 1.15/3.2 GB 3.6 MB/s
+  rows=200,000 kept=154,523 1.28/3.2 GB 3.2 MB/s
+  rows=220,000 kept=169,840 1.41/3.2 GB 2.8 MB/s
+  rows=240,000 kept=185,344 1.54/3.2 GB 2.5 MB/s
+  rows=260,000 kept=200,840 1.67/3.2 GB 2.3 MB/s
+  rows=280,000 kept=216,269 1.79/3.2 GB 2.2 MB/s
+  rows=300,000 kept=231,702 1.93/3.2 GB 2.3 MB/s
+  rows=320,000 kept=247,136 2.06/3.2 GB 2.4 MB/s
+  rows=340,000 kept=262,580 2.18/3.2 GB 2.5 MB/s
+  rows=360,000 kept=278,044 2.31/3.2 GB 2.6 MB/s
+  rows=380,000 kept=293,504 2.44/3.2 GB 2.6 MB/s
+  rows=400,000 kept=308,844 2.57/3.2 GB 2.7 MB/s
+  rows=420,000 kept=324,246 2.70/3.2 GB 2.8 MB/s
+  rows=440,000 kept=339,699 2.83/3.2 GB 2.8 MB/s
+  rows=460,000 kept=355,068 2.96/3.2 GB 2.9 MB/s
+  rows=480,000 kept=370,434 3.09/3.2 GB 2.9 MB/s
+[done] /Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda/data/math_raw/openwebmath.txt — 3.20 GB, 383,394 docs, 113,408 skipped
+[next] python3 scripts/build_pretrain_corpus.py --out data/corpus_pretrain_v8
+/Users/daffanaufalrachmat/.pyenv/versions/3.12.10/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

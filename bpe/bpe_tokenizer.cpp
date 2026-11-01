@@ -78,6 +78,10 @@ static std::unordered_map<std::string, uint8_t> build_byte_decoder() {
     return m;
 }
 
+// Corpora written by scripts/build_pretrain_corpus.py end each document with a
+// line holding exactly this. It is a special token, never a merge candidate.
+static const std::string kDocSeparator = "<|endoftext|>";
+
 // =============================================================================
 // BPEThreadPool
 // =============================================================================
@@ -240,6 +244,49 @@ void BPETrainer::init_base_vocab() {
 }
 
 // ---------------------------------------------------------------------------
+// Script classes used to break space-free CJK text into reusable units.
+// ---------------------------------------------------------------------------
+enum : int {
+    kScriptOther = 0, kScriptLatin, kScriptDigit,
+    kScriptHiragana, kScriptKatakana, kScriptHan, kScriptCjkPunct
+};
+
+static inline int utf8_seq_len(uint8_t b) {
+    if (b < 0x80) return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;   // continuation or invalid: advance one byte so we cannot stall
+}
+
+static inline int cjk_script_class(const char* p, const char* end) {
+    uint8_t b = (uint8_t)*p;
+    if (b < 0x80) {
+        if (b >= '0' && b <= '9') return kScriptDigit;
+        if ((b | 32) >= 'a' && (b | 32) <= 'z') return kScriptLatin;
+        return kScriptOther;
+    }
+    int n = utf8_seq_len(b);
+    if (p + n > end) return kScriptOther;
+    uint32_t cp = 0;
+    if (n == 2)      cp = ((b & 0x1F) << 6)  |  ((uint8_t)p[1] & 0x3F);
+    else if (n == 3) cp = ((b & 0x0F) << 12) | (((uint8_t)p[1] & 0x3F) << 6)
+                                             |  ((uint8_t)p[2] & 0x3F);
+    else if (n == 4) cp = ((b & 0x07) << 18) | (((uint8_t)p[1] & 0x3F) << 12)
+                                             | (((uint8_t)p[2] & 0x3F) << 6)
+                                             |  ((uint8_t)p[3] & 0x3F);
+    else return kScriptOther;
+    if (cp >= 0x3040 && cp <= 0x309F) return kScriptHiragana;
+    if ((cp >= 0x30A0 && cp <= 0x30FF) || (cp >= 0x31F0 && cp <= 0x31FF))
+        return kScriptKatakana;
+    if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF))
+        return kScriptHan;
+    if ((cp >= 0x3000 && cp <= 0x303F) || (cp >= 0xFF01 && cp <= 0xFF65))
+        return kScriptCjkPunct;
+    return kScriptOther;
+}
+
+// ---------------------------------------------------------------------------
 // Pretokenize — hand-written whitespace splitter (BOTTLENECK FIX #5)
 // No std::regex — ~4-8× faster on large corpora
 // ---------------------------------------------------------------------------
@@ -285,8 +332,42 @@ std::vector<std::string> BPETrainer::pretokenize(const std::string& text) const 
         encoded.reserve((size_t)(word_end - ws_tail) * 2);
         for (const char* c = ws_tail; c < ws_end; ++c)
             encoded += BYTE_ENCODER[(uint8_t)*c];
-        for (const char* c = word_start; c < word_end; ++c)
-            encoded += BYTE_ENCODER[(uint8_t)*c];
+
+        // Japanese has no spaces, so a whitespace-only splitter turns a whole
+        // sentence into one "word": measured 80 B/word against English's 5.
+        // Each long word is then nearly unique (2.3 repeats on average), its
+        // pairs never accumulate enough count to win a greedy merge, and the
+        // vocabulary goes to English and code instead — vocab_8 came out with
+        // 1,058 CJK tokens against vocab_7's 8,433. Splitting at script
+        // transitions gives back the units Japanese actually reuses: kana runs
+        // (particles, inflections), katakana runs (loanwords), kanji compounds.
+        const char* c = word_start;
+        while (c < word_end) {
+            const char* piece = c;
+            int cls = cjk_script_class(c, word_end);
+            while (c < word_end) {
+                const char* nxt = c;
+                int k = cjk_script_class(nxt, word_end);
+                if (k != cls) break;
+                c += utf8_seq_len((uint8_t)*c);
+                if (c > word_end) c = word_end;
+                // CJK punctuation stands alone, and a run is capped so the
+                // pathological tail (p99 = 720 B) cannot come back.
+                // Digits stand alone too: left to frequency, BPE cut "1899"
+                // into "189"+"9" and "2024" into "202"+"4", so the same value
+                // got different pieces in different contexts and neither exact
+                // recall nor digit-wise arithmetic could generalise.
+                if (cls == kScriptCjkPunct || cls == kScriptDigit ||
+                    (size_t)(c - piece) >= 48) break;
+            }
+            if (c == piece) c += utf8_seq_len((uint8_t)*piece);
+            for (const char* q = piece; q < c && q < word_end; ++q)
+                encoded += BYTE_ENCODER[(uint8_t)*q];
+            if (!encoded.empty()) {
+                tokens.push_back(encoded);
+                encoded.clear();
+            }
+        }
         if (!encoded.empty()) tokens.push_back(std::move(encoded));
     }
     return tokens;
@@ -359,6 +440,23 @@ void BPETrainer::load_corpus(const std::vector<std::string>& file_paths,
         uint64_t batch_base = 0;
         bool unlimited = (max_bytes_per_file == 0);
 
+        // Pre-tokenization has to run over whole documents, not single lines.
+        // pretokenize() only sees what it is handed, so feeding it one line at
+        // a time makes "\n\n" and "\n    " impossible to observe and the
+        // trainer can never learn a blank-line or newline+indent merge — which
+        // is why vocab_7 has exactly one token containing a newline. Documents
+        // end at kDocSeparator, or at kMaxDocBytes for corpora that predate it.
+        constexpr size_t kMaxDocBytes = 8192;
+        std::string doc;
+        doc.reserve(kMaxDocBytes + 1024);
+
+        auto push_doc = [&]() {
+            if (doc.empty()) return;
+            lines.push_back(std::move(doc));
+            doc.clear();
+            doc.reserve(kMaxDocBytes + 1024);
+        };
+
         auto flush_batch = [&]() {
             if (lines.empty()) return;
             std::cout << "[LOAD] [" << std::string(LINE_WIDTH, '~') << "] "
@@ -399,14 +497,19 @@ void BPETrainer::load_corpus(const std::vector<std::string>& file_paths,
                 std::string line(data, pos, nl - pos);
                 pos = nl + 1;
 
-                if (line.empty()) continue;
                 if (!unlimited && file_bytes > max_bytes_per_file) {
                     stop_reading = true;
                     break;
                 }
+                file_bytes += line.size() + 1;
 
-                file_bytes += line.size();
-                lines.push_back(std::move(line));
+                if (line == kDocSeparator) {
+                    push_doc();          // separator itself is never a merge
+                } else {
+                    doc += line;
+                    doc += '\n';
+                    if (doc.size() >= kMaxDocBytes) push_doc();
+                }
 
                 if (lines.size() >= BATCH_LINES)
                     flush_batch();
@@ -433,10 +536,10 @@ void BPETrainer::load_corpus(const std::vector<std::string>& file_paths,
             }
 
             if (nread < (std::streamsize)READ_CHUNK_SIZE && !stop_reading) {
-                // Process any remaining data (last line without trailing \n)
+                // Last line of the file, which has no trailing newline.
                 if (!carry.empty()) {
                     file_bytes += carry.size();
-                    lines.push_back(std::move(carry));
+                    if (carry != kDocSeparator) doc += carry;
                     carry.clear();
                 }
                 break;
@@ -446,9 +549,10 @@ void BPETrainer::load_corpus(const std::vector<std::string>& file_paths,
         // Process final batch
         if (!carry.empty()) {
             file_bytes += carry.size();
-            lines.push_back(std::move(carry));
+            if (carry != kDocSeparator) doc += carry;
             carry.clear();
         }
+        push_doc();
         flush_batch();
         total_bytes += file_bytes;
 
@@ -812,7 +916,6 @@ void BPETrainer::train() {
     std::cout << "[BPE] Remaining frequency-based merges: " << remaining_merges << "\n";
 
     auto t0 = std::chrono::steady_clock::now();
-    auto t_last_progress = t0;
 
     std::cout << "[BPE] Starting merge loop...\n" << std::flush;
 
@@ -865,9 +968,6 @@ void BPETrainer::train() {
         // --- Progress bar (every PROGRESS_INTERVAL) ---
         if ((step + 1) % PROGRESS_INTERVAL == 0 || step == 0) {
             auto now  = std::chrono::steady_clock::now();
-            double secs = std::chrono::duration<double>(now - t0).count();
-            double mps  = (secs > 0) ? (double)(step + 1 - merge_step_ + merge_step_) / secs : 0;
-            // simpler: just use step+1 from the start of this train() call
             double elapsed = std::chrono::duration<double>(now - t0).count();
             double rate    = (elapsed > 0) ? (double)(step + 1) / elapsed : 0;
             render_progress(step + 1, num_merges_needed, best_freq, left, right, rate);
@@ -1105,7 +1205,11 @@ void BPETrainer::load(const std::string& vocab_path,
         std::string line;
         while (std::getline(f, line)) {
             if (!line.empty() && line.back() == '\r') line.pop_back();
-            if (line.empty() || line[0] == '#') continue;
+            // Only the "#version:" header is a comment. '#' is a real token:
+            // vocab_7 carries 27 merges that start with it ("#!", "#!/usr/bin/",
+            // "##" through "################################", and several CJK
+            // comment markers). Skipping every '#' line drops them all.
+            if (line.empty() || line.rfind("#version:", 0) == 0) continue;
             auto sp = line.find(' ');
             if (sp == std::string::npos) continue;
             std::string left = line.substr(0, sp), right = line.substr(sp + 1);
@@ -1318,8 +1422,14 @@ void BPEEncoder::load_text(const std::string& vocab_path, const std::string& mer
         std::ifstream f(merges_path);
         if (!f) throw std::runtime_error("Cannot open merges: " + merges_path);
         std::string line;
+        // Only the "#version:" banner is a comment. Treating every '#' line as a
+        // comment silently dropped 27 real merges in vocab_7 — '#!', '#!/usr/bin/env',
+        // '##'..'################', '# ãĥ' — i.e. exactly the shebang, markdown
+        // heading and CJK-comment tokens. That made --vocab_dir and --bpe (binary)
+        // produce DIFFERENT token ids for the same code, a train/inference mismatch.
         while (std::getline(f, line)) {
-            if (line.empty() || line[0] == '#') continue;
+            if (line.empty()) continue;
+            if (line.rfind("#version:", 0) == 0) continue;
             auto sp = line.find(' ');
             if (sp == std::string::npos) continue;
             std::string left = line.substr(0, sp), right = line.substr(sp + 1);
@@ -1438,19 +1548,20 @@ std::vector<std::string> BPEEncoder::pretokenize(const std::string& text) const 
     return tokens;
 }
 
-std::vector<TokenID> BPEEncoder::encode_word(const std::string& word_in) const {
-    // Guard: cap word length to prevent O(n²) BPE merge blow-up on pathological
-    // inputs (e.g. base64, minified JS, no-whitespace long strings).
-    // 512 bytes → at most ~512 initial tokens → manageable merge passes.
-    const std::string& word = (word_in.size() <= 512) ? word_in
-        : std::string(word_in.data(), 512);
+// Maximum bytes of a single byte-encoded pre-token handed to the merge loop.
+// The merge loop is O(n^2) in the number of symbols, so an unbounded word (a
+// base64 blob, a minified bundle) would stall the tokenizer. Note this counts
+// BYTE-ENCODED bytes: one Japanese character is 3 raw bytes and each of those
+// maps to a 2-byte glyph, so 512 here is only ~85 Japanese characters.
+static constexpr size_t kMaxWordBytes = 512;
 
+std::vector<TokenID> BPEEncoder::encode_chunk(std::string_view word) const {
     std::vector<TokenID> seq;
     size_t pos = 0;
     while (pos < word.size()) {
         bool found = false;
         for (int len = std::min((int)(word.size()-pos), 8); len >= 1; --len) {
-            auto it = token_to_id_.find(std::string_view(word).substr(pos, len));
+            auto it = token_to_id_.find(word.substr(pos, len));
             if (it != token_to_id_.end()) {
                 seq.push_back(it->second); pos += len; found = true; break;
             }
@@ -1473,6 +1584,32 @@ std::vector<TokenID> BPEEncoder::encode_word(const std::string& word_in) const {
         seq = std::move(ns);
     }
     return seq;
+}
+
+std::vector<TokenID> BPEEncoder::encode_word(const std::string& word_in) const {
+    std::string_view word(word_in);
+    if (word.size() <= kMaxWordBytes) return encode_chunk(word);
+
+    // Split, do not truncate. Japanese has no spaces, so a normal Wikipedia
+    // sentence is a single pre-token; truncating at kMaxWordBytes silently
+    // discarded 43% of the characters in a sample of wiki_ja and 19% of
+    // culturax_ja. Splitting costs at most one extra token per ~85 Japanese
+    // characters (merges cannot span a chunk boundary) and loses nothing.
+    std::vector<TokenID> out;
+    size_t pos = 0;
+    while (pos < word.size()) {
+        size_t take = std::min(kMaxWordBytes, word.size() - pos);
+        if (pos + take < word.size()) {
+            // Back up to a UTF-8 lead byte so no byte-encoder glyph is halved.
+            while (take > 1 &&
+                   (static_cast<unsigned char>(word[pos + take]) & 0xC0) == 0x80)
+                --take;
+        }
+        auto part = encode_chunk(word.substr(pos, take));
+        out.insert(out.end(), part.begin(), part.end());
+        pos += take;
+    }
+    return out;
 }
 
 std::vector<TokenID> BPEEncoder::encode(const std::string& text,
@@ -1513,21 +1650,19 @@ std::vector<TokenID> BPEEncoder::encode(const std::string& text,
 
         // Collect non-special segment up to next '<|' or end
         const char* seg_start = p;
+        // A '<|' that is not a known special is ordinary text. Step over the
+        // two characters first so the scan below can make progress, but keep
+        // them in the segment — dropping them (the previous `p += 2` with no
+        // segment) silently deleted characters from the input.
+        if (end - p >= 2 && p[0] == '<' && p[1] == '|') p += 2;
         while (p < end) {
             if (end - p >= 2 && p[0] == '<' && p[1] == '|') break;
             ++p;
         }
-        if (p > seg_start) {
-            std::string segment(seg_start, p - seg_start);
-            for (const auto& word : pretokenize(segment)) {
-                auto toks = encode_word(word);
-                result.insert(result.end(), toks.begin(), toks.end());
-            }
-        } else {
-            // p == seg_start means we're stuck at a '<|' that didn't form
-            // a valid special token (no matching '|>', unknown token, or
-            // <| at text boundary). Skip past it to avoid infinite loop.
-            p += 2;
+        std::string segment(seg_start, p - seg_start);
+        for (const auto& word : pretokenize(segment)) {
+            auto toks = encode_word(word);
+            result.insert(result.end(), toks.begin(), toks.end());
         }
     }
 

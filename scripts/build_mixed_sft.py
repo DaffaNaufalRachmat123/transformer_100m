@@ -34,8 +34,21 @@ from audit_sft import audit_row  # noqa: E402  shared so both agree on "bad"
 SOURCES = {
     "facts": ["sft_facts_expanded", "sft_facts_v11"],
     "translation": ["sft_translation_enja", "sft_translation_bank"],
-    "coding": ["sft_think_code"],
-    "math": ["sft_think_math"],
+    # sft_think_code is only 9,065 rows from 46 hand-written generators, all of
+    # the shape "read ints from stdin, print a number", and at a 0.075 share it
+    # capped the whole mixed set at 120,080 rows. sft_code_instruct adds 150k
+    # decontaminated Magicoder rows, which lifts the cap and widens the problem
+    # distribution.
+    # TRADEOFF: every sft_think_code row carries a <|think|> span and no
+    # Magicoder row does (they answer code-first, so there is no leading prose
+    # to wrap). Pooling both at full size makes coding ~94% think-free, which
+    # teaches the model to skip the span. Cap sft_code_instruct if that matters
+    # more than breadth.
+    "coding": ["sft_think_code", "sft_code_instruct"],
+    # sft_gsm8k_pot keeps the same Program-of-Thought shape as sft_think_math,
+    # built from GSM8K's own inline calculator steps and kept only when the
+    # generated program reproduces the official answer.
+    "math": ["sft_think_math", "sft_gsm8k_pot"],
 }
 
 DEFAULT_RATIO = {"facts": 0.35, "translation": 0.35, "coding": 0.20, "math": 0.10}

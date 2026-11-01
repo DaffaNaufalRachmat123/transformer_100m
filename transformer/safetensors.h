@@ -23,6 +23,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -30,6 +31,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -358,18 +360,35 @@ public:
         // Pad header to 64-byte alignment
         while ((8 + header.size()) % 64 != 0) header += ' ';
 
-        std::ofstream f(path, std::ios::binary | std::ios::trunc);
-        if (!f) throw std::runtime_error("Cannot open for writing: " + path);
+        // Write to a sibling temp file and rename into place. A checkpoint here
+        // is ~983 MB of weights or ~3.9 GB of optimizer moments, written a few
+        // thousand times over the run; truncating the live path first means any
+        // interruption inside that multi-second window destroys the only copy.
+        // rename() is atomic on POSIX, so readers see either the old file or
+        // the complete new one.
+        const std::string tmp_path = path + ".tmp";
+        {
+            std::ofstream f(tmp_path, std::ios::binary | std::ios::trunc);
+            if (!f) throw std::runtime_error("Cannot open for writing: " + tmp_path);
 
-        uint64_t hlen = header.size();
-        f.write(reinterpret_cast<const char*>(&hlen), 8);
-        f.write(header.data(), hlen);
+            uint64_t hlen = header.size();
+            f.write(reinterpret_cast<const char*>(&hlen), 8);
+            f.write(header.data(), hlen);
 
-        for (const auto& t : pending_) {
-            size_t nb = 1;
-            for (auto d : t.shape) nb *= d;
-            nb *= dtype_bytes(t.dtype);
-            f.write(reinterpret_cast<const char*>(t.data), nb);
+            for (const auto& t : pending_) {
+                size_t nb = 1;
+                for (auto d : t.shape) nb *= d;
+                nb *= dtype_bytes(t.dtype);
+                f.write(reinterpret_cast<const char*>(t.data), nb);
+            }
+            f.flush();
+            if (!f) throw std::runtime_error("Write failed (disk full?): " + tmp_path);
+        }
+        std::error_code ec;
+        std::filesystem::rename(tmp_path, path, ec);
+        if (ec) {
+            std::filesystem::remove(tmp_path, ec);
+            throw std::runtime_error("Cannot commit checkpoint: " + path);
         }
     }
 
