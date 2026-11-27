@@ -1,0 +1,19 @@
+{
+  "package": "rl_v9_50b (50B Medium-Hard Verifiable GRPO Add-ons)",
+  "v8_untouched": true,
+  "tasks": 15889,
+  "by_kind": {
+    "math_anchor": 12399,
+    "assert": 3589
+  },
+  "by_origin_group": {
+    "comp_math": 6401,
+    "v9_gsm8k": 5998,
+    "v9_exec": 3589
+  },
+  "by_lang": {
+    "ja": 8079,
+    "en": 7909
+  },
+  "cpp_bpe_v9_verified": true
+}

@@ -28,6 +28,12 @@ transformer_492m_pretrain_ready.zip
 vast_deploy/.env*
 vast_deploy/corpus_pretrain_v8
 vast_deploy/speed_monitoring_gpu/
+vast_deploy/transformer_500m_cuda/
+
+# scratch output pengujian verifier lokal
+books.xml
+output.xml
+database.db
 
 # artefak monitoring GPU lokal (video/log besar, ~4 GB)
 speed_monitoring_gpu/
