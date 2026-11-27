@@ -25,7 +25,7 @@ logs/expand_facts_v3.log
 transformer_492m_pretrain_ready.zip
 
 # vast_deploy (credential + artefak besar)
-vast_deploy/.env
+vast_deploy/.env*
 vast_deploy/corpus_pretrain_v8
 vast_deploy/speed_monitoring_gpu/
 
