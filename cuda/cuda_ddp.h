@@ -104,21 +104,42 @@ inline bool init_nccl() {
     auto& s = state();
     if (s.initialized) return true;
 
+    // ── Exchange the NCCL unique id via file in EVERY multi-rank mode ────────
+    // (fork mode AND multi-process launch_ddp.sh mode). Without this, a rank
+    // launched via RANK/WORLD_SIZE env would pass an uninitialized nccl_id to
+    // ncclCommInitRank and the communicator would never match.
+    static const char* id_file = "/tmp/nccl_id_transformer_100m";
     ncclUniqueId nccl_id;
-    if (s.rank == 0) ncclGetUniqueId(&nccl_id);
-
-    if (s.is_forked) {
-        const char* id_file = "/tmp/nccl_id_transformer_100m";
+    memset(&nccl_id, 0, sizeof(nccl_id));
+    if (s.world_size > 1) {
         if (s.rank == 0) {
+            ncclGetUniqueId(&nccl_id);
+            unlink(id_file);                    // never reuse a stale id
             FILE* f = fopen(id_file, "wb");
-            if (f) { fwrite(&nccl_id, sizeof(nccl_id), 1, f); fclose(f); }
-            usleep(200000);
+            if (!f) {
+                fprintf(stderr, "[DDP] rank 0: cannot write %s\n", id_file);
+                return false;
+            }
+            fwrite(&nccl_id, sizeof(nccl_id), 1, f);
+            fclose(f);
         } else {
-            usleep(50000);
-            FILE* f = fopen(id_file, "rb");
-            while (!f) { usleep(10000); f = fopen(id_file, "rb"); }
-            (void)fread(&nccl_id, sizeof(nccl_id), 1, f); fclose(f);
+            bool got = false;
+            for (int spin = 0; spin < 2000 && !got; ++spin) {  // ~20 s max
+                FILE* f = fopen(id_file, "rb");
+                if (f) {
+                    got = (fread(&nccl_id, sizeof(nccl_id), 1, f) == 1);
+                    fclose(f);
+                }
+                if (!got) usleep(10000);
+            }
+            if (!got) {
+                fprintf(stderr, "[DDP] rank %d: NCCL id file %s never appeared "
+                                "(rank 0 mati?)\n", s.rank, id_file);
+                return false;
+            }
         }
+    } else if (s.rank == 0) {
+        ncclGetUniqueId(&nccl_id);
     }
 
     ncclResult_t res = ncclCommInitRank(&s.comm, s.world_size, nccl_id, s.rank);
