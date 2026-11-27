@@ -8,7 +8,7 @@
 set -e
 
 echo "═══════════════════════════════════════════════════════"
-echo " Kaggle T4 x2 Setup — transformer_100m_cuda"
+echo " Kaggle T4 x2 Setup — transformer_500m_cuda"
 echo "═══════════════════════════════════════════════════════"
 
 # ─── 1. Verify CUDA environment ─────────────────────────────────────────────

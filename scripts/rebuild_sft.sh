@@ -1,60 +1,46 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  rebuild_sft.sh — regenerate every EN/JA SFT dataset, in dependency order.
+#  rebuild_sft.sh — Ceiling Edition v3 SFT + DPO + Verifiable RL Regeneration
 #
-#  Order matters: the thinking sets read the coding sets, and the mixer reads
-#  the thinking sets. Running the mixer against stale inputs silently produces
-#  a dataset that no longer matches its own stats.json.
-#
-#  Usage:
-#    bash scripts/rebuild_sft.sh              # rebuild everything
-#    SKIP_TRANSLATION=1 bash scripts/rebuild_sft.sh
-#
-#  Tunable (env):
-#    TOTAL        rows requested from the mixer  [400000, capped by data]
-#    RATIO        family mix  [facts=.3875,translation=.3875,coding=.075,math=.15]
-#    MAX_PAIRS    translation pairs to keep      [900000]
-#    PHRASINGS    MBPP rewordings per language   [4]
+#  Config (aligned with 491.58M @ 10B corpus_pretrain_v8, vocab_9):
+#    * Math        : Option B1 (GSM8K EN + GSM8K JA + MetaMathQA + sft_think_math)
+#    * Coding      : Option A2 (max_seq=1024, Phi-1 textbook Python + sft_think_code + aligned)
+#    * Facts       : 41 Wikidata categories + SciQ Science QA + OASST2 EN/JA multi-turn
+#    * Translation : OPUS KFTT + Conversational + LaBSE + 2-sent paragraphs + 50+ freeform
+#                    non-template styles + anti-QA-collapse question translation pairs
+#    * Mixing      : Masked-token budget (41% trans, 21% facts, 21% math, 17% coding)
+#    * DPO         : Prefix-safe length-matched hard negatives (`sft_data/dpo_ceiling_enja`)
+#    * RL (GRPO)   : Decontaminated EN+JA MBPP asserts + multi-case code + verifiable GSM8K
 # ═══════════════════════════════════════════════════════════════════════════
 set -e
 cd "$(dirname "$0")/.."
 
-TOTAL="${TOTAL:-400000}"
-RATIO="${RATIO:-facts=0.3875,translation=0.3875,coding=0.075,math=0.15}"
-MAX_PAIRS="${MAX_PAIRS:-900000}"
-PHRASINGS="${PHRASINGS:-4}"
-CODE_INSTRUCT="${CODE_INSTRUCT:-150000}"
+TARGET_MTOK="${TARGET_MTOK:-24500000}"
+RATIO="${RATIO:-translation=0.34,facts=0.24,math=0.22,coding=0.20}"
 OUT="${OUT:-sft_data/sft_mixed_enja}"
 
-echo "═══ 1/5  facts ═══"
+echo "═══ 1/6  facts (41 categories, holdout-clean) ═══"
 python3 scripts/build_facts_expanded.py
 
-if [ "${SKIP_TRANSLATION:-0}" = "1" ]; then
-    echo "═══ 2/5  translation — skipped ═══"
-else
-    echo "═══ 2/5  translation ═══"
-    python3 scripts/build_translation_enja.py --max_pairs "$MAX_PAIRS"
-fi
+echo "═══ 2/6  translation ceiling (KFTT + conversational + LaBSE + freeform + q-guard) ═══"
+python3 scripts/build_translation_curated.py
 
-echo "═══ 3/5  coding (MBPP; HumanEval stays held out) ═══"
-python3 scripts/build_coding_expanded.py \
-    --mbpp /tmp/mbpp.jsonl --humaneval /tmp/he.jsonl \
-    --phrasings "$PHRASINGS"
-
-# Decontaminated Magicoder rows. Without these the coding pool is 9,065 unique
-# rows, which at a 0.075 share caps the whole mixed set at 120,080.
-if [ ! -s sft_data/sft_code_instruct/train.jsonl ]; then
-    python3 scripts/build_code_instruct_sft.py --max_rows "$CODE_INSTRUCT"
-fi
-
-echo "═══ 4/5  reasoning spans ═══"
-python3 scripts/build_thinking_sft.py
+echo "═══ 3/6  math & coding reasoning spans (Option B1 + CRLF/fence clean) ═══"
 python3 scripts/build_gsm8k_pot_sft.py
+python3 scripts/build_thinking_sft.py
 
-echo "═══ 5/5  mixing ═══"
+echo "═══ 4/6  coding instruct filter (Option A2 <= 1000 BPE v9 tokens, pretrain langs) ═══"
+python3 scripts/filter_code_instruct_aligned.py
+
+echo "═══ 5/6  token-budget mixing (Ceiling v3) ═══"
 rm -rf "$OUT"
-python3 scripts/build_mixed_sft.py --out "$OUT" --total "$TOTAL" \
+python3 scripts/build_mixed_sft.py --out "$OUT" \
+    --target_masked_tokens "$TARGET_MTOK" \
     --strict_ratio --ratio "$RATIO"
+
+echo "═══ 6/6  prefix-safe DPO ceiling + verifiable RL ceiling ═══"
+python3 scripts/build_dpo_ceiling.py
+python3 scripts/build_rl_ceiling.py
 
 echo ""
 echo "═══ audit (must report 0.00%) ═══"

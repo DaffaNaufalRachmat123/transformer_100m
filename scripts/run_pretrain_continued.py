@@ -14,7 +14,7 @@ import subprocess
 import os
 import sys
 
-WORK_DIR = os.environ.get("WORK_DIR", "/kaggle/working/transformer_100m_cuda")
+WORK_DIR = os.environ.get("WORK_DIR", "/kaggle/working/transformer_500m_cuda")
 DATA_DIR = os.environ.get("DATA_DIR", "/kaggle/input/datasets/naufalrachmat/datatraining/data/corpus_final")
 CKPT_DIR = os.environ.get("CKPT_DIR", "/kaggle/working/checkpoints")
 

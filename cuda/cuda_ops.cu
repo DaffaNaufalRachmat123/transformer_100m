@@ -395,6 +395,108 @@ CudaTensor masked_log_probs(const CudaTensor& logits, const CudaTensor& targets,
     return out;
 }
 
+// ─── DPO: masked_log_probs_batch (per-sample [B] mean log-prob, coalesced over V) ──
+__global__ void per_token_masked_lp_kernel(
+    const __half* __restrict__ logits, const int* __restrict__ targets,
+    const float* __restrict__ mask, float* __restrict__ tok_lp, int BS, int V)
+{
+    extern __shared__ float sdata[];
+    int pos = blockIdx.x;
+    if (pos >= BS) return;
+    int tid = threadIdx.x;
+
+    if (mask[pos] <= 0.0f) {
+        if (tid == 0) tok_lp[pos] = 0.0f;
+        return;
+    }
+    int target = targets[pos];
+    if (target < 0 || target >= V) {
+        if (tid == 0) tok_lp[pos] = 0.0f;
+        return;
+    }
+
+    const __half* row = logits + (size_t)pos * V;
+    float local_max = -1e30f;
+    for (int j = tid; j < V; j += blockDim.x) {
+        float v = __half2float(row[j]);
+        if (v > local_max) local_max = v;
+    }
+    sdata[tid] = local_max;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride && sdata[tid + stride] > sdata[tid])
+            sdata[tid] = sdata[tid + stride];
+        __syncthreads();
+    }
+    float max_val = sdata[0];
+    __syncthreads();
+
+    float local_sum = 0.0f;
+    for (int j = tid; j < V; j += blockDim.x)
+        local_sum += expf(__half2float(row[j]) - max_val);
+    sdata[tid] = local_sum;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) sdata[tid] += sdata[tid + stride];
+        __syncthreads();
+    }
+    if (tid == 0)
+        tok_lp[pos] = __half2float(row[target]) - max_val - logf(sdata[0]);
+}
+
+__global__ void reduce_seq_mean_lp_kernel(
+    const float* __restrict__ tok_lp, const float* __restrict__ mask,
+    float* __restrict__ out, int B, int S)
+{
+    extern __shared__ float sdata[];
+    int b = blockIdx.x;
+    if (b >= B) return;
+    int tid = threadIdx.x;
+
+    float lsum = 0.0f, lcnt = 0.0f;
+    int base = b * S;
+    for (int t = tid; t < S; t += blockDim.x) {
+        if (mask[base + t] > 0.0f) {
+            lsum += tok_lp[base + t];
+            lcnt += 1.0f;
+        }
+    }
+    sdata[tid] = lsum;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) sdata[tid] += sdata[tid + stride];
+        __syncthreads();
+    }
+    float total_sum = sdata[0];
+    __syncthreads();
+
+    sdata[tid] = lcnt;
+    __syncthreads();
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) sdata[tid] += sdata[tid + stride];
+        __syncthreads();
+    }
+    if (tid == 0)
+        out[b] = (sdata[0] > 0.0f) ? (total_sum / sdata[0]) : 0.0f;
+}
+
+CudaTensor masked_log_probs_batch(const CudaTensor& logits, const CudaTensor& targets,
+                                  const CudaTensor& mask, int B, int S) {
+    int BS = B * S;
+    int V = (logits.ndim == 3) ? (int)logits.shape[2] : (int)logits.shape[logits.ndim - 1];
+    CudaTensor tok_lp({(int64_t)BS}, DType::F32);
+    CudaTensor out({(int64_t)B}, DType::F32);
+    int block = 256;
+    per_token_masked_lp_kernel<<<BS, block, block * sizeof(float), ctx.compute_stream>>>(
+        (const __half*)logits.data, (const int*)targets.data,
+        (const float*)mask.data, (float*)tok_lp.data, BS, V);
+    reduce_seq_mean_lp_kernel<<<B, block, block * sizeof(float), ctx.compute_stream>>>(
+        (const float*)tok_lp.data, (const float*)mask.data,
+        (float*)out.data, B, S);
+    cuda::sync_compute();
+    return out;
+}
+
 // ─── DPO: scale_fp16 ──────────────────────────────────────────────────────
 __global__ void scale_fp16_kernel(const __half* in, __half* out, float scale, size_t n) {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;

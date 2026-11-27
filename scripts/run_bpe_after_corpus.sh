@@ -7,7 +7,7 @@
 # includes Java, Go, PHP, Ruby, Kotlin, C++ and JS. Merges learned from the old
 # bucket would carry none of those idioms, and re-training the tokenizer later
 # invalidates every checkpoint trained against it.
-cd "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda" || exit 1
+cd "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_500m_cuda" || exit 1
 
 echo "=== waiting for corpus build ==="
 while ! grep -q "CORPUS BUILD DONE" logs/corpus_rebuild.log 2>/dev/null; do

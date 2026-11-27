@@ -2,7 +2,7 @@
 # Waits for the in-flight fetch jobs, then rebuilds the pretraining corpus.
 # Written as a script rather than a chain of interactive commands because the
 # build takes hours and must not die with the shell.
-cd "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_100m_cuda" || exit 1
+cd "/Users/daffanaufalrachmat/Documents/Real Projects/TransformerSample/transformer_500m_cuda" || exit 1
 
 echo "=== waiting for fetch jobs ==="
 while pgrep -f "fetch_corpus.py --dataset" > /dev/null; do

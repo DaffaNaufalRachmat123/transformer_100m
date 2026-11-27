@@ -11,7 +11,7 @@ See `GOOGLE_COLLAB_FULL_TRAINING.md` cells 1–5.
 ```python
 import subprocess, os
 
-WORK_DIR = "/content/transformer_100m_cuda"
+WORK_DIR = "/content/transformer_500m_cuda"
 env = os.environ.copy()
 env.pop('CUDA_VISIBLE_DEVICES', None)
 

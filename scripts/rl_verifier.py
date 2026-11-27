@@ -142,7 +142,8 @@ def load_test_bank():
     bank = {}
     here = os.path.dirname(os.path.abspath(__file__))
     root = os.path.dirname(here)
-    for cand in (os.path.join(root, "rl_data", "coding.jsonl"),
+    for cand in (os.path.join(root, "rl_data", "ceiling_enja", "train.jsonl"),
+                 os.path.join(root, "rl_data", "coding.jsonl"),
                  os.path.join(root, "rl_data", "coding_v2.jsonl"),
                  os.path.join(root, "rl_data", "coding_v3.jsonl")):
         if os.path.exists(cand):

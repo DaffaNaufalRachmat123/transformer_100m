@@ -1,27 +1,30 @@
-# KAGGLE — Full Training Pipeline (Pretrain → SFT)
+# KAGGLE — Full Ceiling Training Pipeline (Mid-Train → SFT v4 → DPO Ceiling → Verifiable RL)
 
-> **Update (2026-08-09):** DPO dihapus dari pipeline.
-> Data DPO EN↔JA yang tersedia sangat kecil & berkualitas rendah sehingga
-> *menurunkan* kualitas model (margin meledak ke -131). Untuk model 892M
-> yang fokus terjemahan EN↔JA, **SFT dengan data paralel bersih sudah cukup**.
-> Lihat `scripts/run_enja_pipeline.sh` untuk versi ringkas.
+> **Update (Ultra-Max Ceiling Edition — 491.58M @ 10B `corpus_pretrain_v8` on 2× Tesla T4 14.6 GB):**
+> 1. **Mid-Training Annealing (opsional namun direkomendasikan pada sisa ~50% Pretrain):**
+>    Jalankan `bash scripts/apply_midtrain_addons.sh /kaggle/input/datasets/naufalrachmat/corpus-pretrain-updated-1/corpus_pretrain_v8 --kaggle-overlay /kaggle/working/corpus_v8_midtrain` sebelum `--resume` pretrain agar fase penurunan *cosine LR* menyerap 8 shard mid-train (`411 MB`: `GSM8K-JA`, `OpenMathInstruct-JA`, `MetaMathQA-EN`, `Phi-1 Python Textbook`, `OSS Code`, `OPUS KFTT`, `SciQ`, `JCommonsenseQA`, `Dolly-15K` EN+JA) tanpa menyalin `26.8 GB` korpus read-only.
+> 2. **SFT v4 Ultra-Max (`sft_data/sft_mixed_enja`):** `631,727` train / `6,000` eval (`25.48M` *masked tokens*: 33% Translasi, 24% Fakta+QA, 23% Math EN+JA Option B1, 20% Coding `max_seq=1024`; `99.02% <= 512` token). Pada Tesla T4 (`14.6 GB`), gunakan `--sft_batch_size 4`.
+> 3. **DPO Ceiling (`sft_data/dpo_ceiling_enja`):** `22,999` *matched-length pairs* (`p50=1.00`, 4 domain penuh). Seluruh *bug* historis DPO (`BOS` menimpa *embedding* `SYSTEM/USER/ASSISTANT`, skalar *batch* `masked_log_probs`, dan *prefix-truncation*) telah diperbaiki. Pada Tesla T4 (`14.6 GB`), gunakan `--dpo_batch_size 2` (`--dpo_lr 5e-6`, `1` epoch).
+> 4. **Stage 5 Verifiable RL (`rl_data/ceiling_enja`):** `12,498` task eksekusi kode & matematika (`GSM8K` EN+JA, `MBPP`, `Phi-1` unit-tests, `code_stdin`). Jalankan `bash scripts/run_rl.sh --ddp` (otomatis mendeteksi VRAM T4 -> `batch_size=1, n_samples=4, max_seq=768, rl_max_new=384`).
 
 ## Cell 1: Copy Source Code
 
 ```python
 %%bash
 SRC=/kaggle/input/datasets/naufalrachmat/transformerarchitecture17
-DST=/kaggle/working/transformer_100m_cuda
+DST=/kaggle/working/transformer_500m_cuda
 mkdir -p $DST
 cp -r $SRC/bpe         $DST/
 cp -r $SRC/cuda        $DST/
 cp -r $SRC/scripts     $DST/
 cp -r $SRC/tools       $DST/
 cp -r $SRC/transformer $DST/
-cp -r $SRC/vocab_8     $DST/
+cp -r $SRC/vocab_9     $DST/
 cp -r $SRC/infer_cpp   $DST/
-cp $SRC/gdrive_token.json $DST/
-cp $SRC/bpe_v8.bin     $DST/
+cp -r $SRC/rl_data     $DST/ 2>/dev/null || true
+cp $SRC/gdrive_token.json $DST/ 2>/dev/null || true
+cp $SRC/bpe_v9.bin     $DST/
+cp $SRC/config_*.json  $DST/
 cp $SRC/CMakeLists.txt $DST/
 cp $SRC/config.ini     $DST/
 
@@ -47,7 +50,7 @@ ls -lh $DST/sft_data/
 
 ```python
 %%bash
-cd /kaggle/working/transformer_100m_cuda
+cd /kaggle/working/transformer_500m_cuda
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=75 -DUSE_DDP=ON 2>&1 | tail -15
 cmake --build . -j$(nproc) 2>&1 | tail -30
@@ -68,13 +71,13 @@ cmake --build . --target grad_check -j$(nproc) 2>&1 | tail -5
 ```python
 import subprocess, shutil, os
 
-infer_build = '/kaggle/working/transformer_100m_cuda/build_infer'
+infer_build = '/kaggle/working/transformer_500m_cuda/build_infer'
 if os.path.exists(infer_build):
     shutil.rmtree(infer_build)
 os.makedirs(infer_build, exist_ok=True)
 
 subprocess.run(
-    ['cmake', '/kaggle/working/transformer_100m_cuda/infer_cpp',
+    ['cmake', '/kaggle/working/transformer_500m_cuda/infer_cpp',
      '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CUDA_ARCHITECTURES=75'],
     cwd=infer_build, check=True
 )
@@ -107,17 +110,18 @@ os.makedirs('/kaggle/working/checkpoints', exist_ok=True)
 proc = subprocess.Popen(
     ['python3', 'scripts/train_pipeline.py',
      '--auto_continue',
-     '--stages',            'pretrain,sft',
+     '--stages',            'pretrain,sft,dpo',
      '--checkpoint_dir',    '/kaggle/working/checkpoints',
-     '--data_dir',          '/kaggle/input/datasets/naufalrachmat/datatraining/data/corpus_pretrain_v8',
-     '--vocab_dir',         'vocab_8',
-     '--bpe',               'bpe_v8.bin',
-     # Pretrain
-     '--batch_size',        '16',
-     '--max_seq',           '512',
-     '--max_tokens',        '2000000000',
-     '--lr',                '1.4e-4',
-     '--grad_clip',         '5.0',
+     '--data_dir',          '/kaggle/input/datasets/naufalrachmat/corpus-pretrain-updated-1/corpus_pretrain_v8',
+     '--vocab_dir',         'vocab_9',
+     '--bpe',               'bpe_v9.bin',
+     '--arch_config',       'config_500m.json',
+     # Pretrain (Tesla T4 14.6 GB x2: batch=7, seq=512 -> RoPE table tetap 2048)
+     '--batch_size',        '7',
+     '--seq',               '512',
+     '--max_tokens',        '10000000000',
+     '--lr',                '1.0e-4',
+     '--grad_clip',         '0.5',
      '--loss_scale',        '4096',
      '--safety',            'light',
      '--save_every',        '200',
@@ -125,19 +129,27 @@ proc = subprocess.Popen(
      '--upload_every',      '400',
      '--eval_every_tokens', '200000000',
      '--eval_infer_bin',    './build_infer/infer',
-     # SFT (translation-focused, dari checkpoint pretrain)
-     '--sft_dir',           'sft_data/sft_translation_focused',
-     '--sft_lr',            '3e-5',
-     '--sft_epochs',        '1',
-     '--sft_batch_size',    '8',
-     '--sft_max_seq',       '512',
-     '--sft_warmup',        '100',
+     # SFT v4 Ultra-Max (631.7K rows, max_seq=1024, dynamic batch S; T4 safe batch=4)
+     '--sft_dir',           'sft_data/sft_mixed_enja',
+     '--sft_lr',            '2e-5',
+     '--sft_epochs',        '2',
+     '--sft_batch_size',    '4',
+     '--sft_max_seq',       '1024',
+     '--sft_warmup',        '200',
      '--sft_save_every',    '300',
      '--sft_upload_every',  '600',
+     # DPO Ceiling (23K pairs, per-sample kernel + matched-length; T4 safe batch=2)
+     '--dpo_dir',           'sft_data/dpo_ceiling_enja',
+     '--dpo_lr',            '5e-6',
+     '--dpo_epochs',        '1',
+     '--dpo_batch_size',    '2',
+     '--dpo_max_seq',       '1024',
+     '--dpo_beta',          '0.1',
+     '--dpo_max_margin',    '4.0',
      # Infra
      '--ddp', '--num_gpus', '2',
      '--resume'],
-    cwd='/kaggle/working/transformer_100m_cuda',
+    cwd='/kaggle/working/transformer_500m_cuda',
     env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     encoding='utf-8', errors='replace', bufsize=1,
 )
@@ -147,4 +159,11 @@ proc.wait()
 print(f"\n[EXIT CODE: {proc.returncode}]")
 if proc.returncode == 2:
     print("[!] Training stopped due to CUDA OOM.")
+```
+
+## Cell 5: Stage 5 — Verifiable RL / GRPO-lite (Coding + Math EN/JA)
+
+```bash
+cd /kaggle/working/transformer_500m_cuda
+bash scripts/run_rl.sh --ddp
 ```

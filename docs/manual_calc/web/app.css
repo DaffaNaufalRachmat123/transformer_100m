@@ -1,0 +1,60 @@
+/* Kontrol interaktif. Tempo bawaan di atribut data-step-delay pada tag <html>. */
+.story{border:1px solid #385784;border-radius:16px;background:linear-gradient(145deg,#102342,#151735);padding:18px;margin:18px 0 24px;box-shadow:0 12px 32px #0003}
+.story h3{margin:0 0 4px;border:0;padding:0;font-size:19px;color:#e8ecff}
+.story-intro{color:#b7c9e9;font-size:13px;margin:0 0 12px}
+.story-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.story button,.story input{font:inherit}
+.story button{border:1px solid #4b6897;border-radius:8px;background:#1e3860;color:#e8ecff;padding:6px 11px;cursor:pointer;font-size:13px}
+.story button:hover:not(:disabled){background:#25557d;border-color:#7dd3fc}
+.story button:focus-visible,.story input:focus-visible,nav a:focus-visible{outline:2px solid #fbbf24;outline-offset:2px}
+.story button:disabled{opacity:.46;cursor:default}
+.story .story-play{background:#1b604f;border-color:#32ad8b}
+.story .story-next{background:#463a75;border-color:#a78bfa}
+.story .story-reset{background:#523555;border-color:#bd749c}
+.story-counter,.story-pace{color:#b7c9e9;font-size:12px}
+.story-seek-label{display:flex;align-items:center;gap:10px;color:#b7c9e9;font-size:12px}
+.story-seek{flex:1;min-width:0;accent-color:#38bdf8;cursor:pointer}
+.story-guide button{border:1px solid #3a8275;border-radius:7px;background:#174039;color:#e8ecff;padding:6px 10px;cursor:pointer;margin:5px 4px 0 0;font:inherit}
+.story[data-animation] .story-grid{margin-top:5px}
+.story-lock{color:#a8d5c6;font-size:13px;border-left:3px solid #34d399;padding:7px 10px;margin:10px 0}
+.story-locked .story-lock{border-color:#fbbf24;color:#fcd34d}
+.story-locked .story-grid,.story-locked .story-progress,.story-locked .story-seek-label,.story-locked .story-note{display:none}
+.story-go-back{margin-bottom:12px}
+.multiply-scene{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;margin:18px 0;font-size:20px}
+.multiply-scene .story-pill{font-size:17px;padding:10px 12px;animation:story-pulse .7s ease-in-out}
+.multiply-scene>span:not(.story-pill){font-size:12px;color:#8f9bc7}
+.story-seek-label:after{content:'Hanya operasi yang sudah dilihat';font-size:10px}
+.story-pace input{width:62px;background:#101d3c;border:1px solid #4b6897;border-radius:7px;color:#fff;padding:5px}
+.story-progress{height:5px;background:#1e3456;border-radius:9px;overflow:hidden;margin:8px 0 15px}
+.story-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#34d399,#38bdf8);transition:width .3s}
+.story-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,.8fr);gap:13px}
+.story-stage,.story-explain{min-width:0;background:#0c1833;border:1px solid #29446d;border-radius:12px;padding:15px}
+.story-explain{background:#151b3c}
+.story-step-title{font:700 18px 'Space Grotesk',sans-serif;color:#fcd34d;margin:0 0 6px}
+.story-explain p{margin:5px 0 10px;color:#d5dffa;font-size:14px}
+.story-stage .story-formula,.story-explain .story-formula{font:13px/1.6 'JetBrains Mono',monospace;background:#0b1020;border:1px solid #395077;border-radius:8px;padding:10px;color:#d3e9ff;overflow-x:auto;white-space:normal}
+.story-result{color:#34d399;font-weight:700;margin:10px 0 0;font-variant-numeric:tabular-nums}
+.story-ledger{margin-top:12px;color:#b7c9e9;font:12px/1.5 'JetBrains Mono',monospace;max-height:110px;overflow:auto}
+.story-pills{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.story-pill{display:inline-grid;place-items:center;border:1px solid #49678d;border-radius:7px;background:#193055;color:#e8ecff;padding:3px 7px;font:12px 'JetBrains Mono',monospace;word-break:break-all;min-width:28px}
+.story-pill.dimmed{opacity:.42}
+.story-focus{background:#71500b!important;color:#fff!important;border-color:#fcd34d!important;box-shadow:0 0 0 2px #fbbf2470,0 0 15px #fbbf2440;animation:story-pulse .7s ease-in-out}
+.story-pill.done{border-color:#34d399;color:#b7f7da;background:#0e413a}
+.story-pill.bad{border-color:#fb7185;color:#ffd4dc;background:#552033}
+.story-num{font:12px/1.5 'JetBrains Mono',monospace;color:#8f9bc7;margin:4px 0}
+.story-num strong{color:#e8ecff}
+.story-num .story-focus{border-radius:5px;padding:2px 4px}
+.story-grid table{width:auto;min-width:100%;font-size:12px}
+.story-grid th,.story-grid td{padding:4px 7px;position:static;white-space:nowrap}
+.story-grid .tw{max-height:280px}
+.story-note{font-size:12px;color:#9baed5;margin:8px 0 0}
+.story-note strong{color:#34d399}
+.story-step-tag{display:inline-block;background:#274d76;border-radius:5px;color:#7dd3fc;font:11px 'JetBrains Mono',monospace;padding:2px 7px;margin-bottom:5px}
+.story-actions{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:5px 0 12px}
+.story-status{color:#a8d5c6;font-size:12px}
+.story-guide{background:#102a2e;border:1px solid #2d7468;border-radius:9px;padding:9px 12px;font-size:13px;margin:0 0 13px}
+.story-guide strong{color:#34d399}
+.story-plot{width:100%;height:115px;background:#0a1229;border:1px solid #2b486c;border-radius:7px}
+@keyframes story-pulse{50%{box-shadow:0 0 0 4px #fbbf2480,0 0 28px #fbbf2466}}
+@media(max-width:740px){.story{padding:12px}.story-grid{display:block}.story-explain{margin-top:9px}.story-toolbar{gap:5px}.story button{padding:6px 8px}}
+@media print{.story-toolbar,.story-progress,.story-actions{display:none}.story{break-inside:avoid}}

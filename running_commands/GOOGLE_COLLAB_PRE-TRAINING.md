@@ -29,7 +29,7 @@ drive.mount('/content/drive')
 
 import os
 DRIVE_ROOT = "/content/drive/MyDrive/transformer"   # adjust to your layout
-WORK_DIR   = "/content/transformer_100m_cuda"
+WORK_DIR   = "/content/transformer_500m_cuda"
 CKPT_DIR   = f"{DRIVE_ROOT}/checkpoints"            # survives a runtime restart
 os.makedirs(CKPT_DIR, exist_ok=True)
 print(os.listdir(DRIVE_ROOT))
@@ -43,10 +43,10 @@ DRIVE_ROOT=$1; WORK_DIR=$2
 rm -rf "$WORK_DIR"; mkdir -p "$WORK_DIR"
 
 # Source tree (zip or folder on Drive)
-if [ -f "$DRIVE_ROOT/transformer_100m_cuda.zip" ]; then
-  unzip -q "$DRIVE_ROOT/transformer_100m_cuda.zip" -d /content/
+if [ -f "$DRIVE_ROOT/transformer_500m_cuda.zip" ]; then
+  unzip -q "$DRIVE_ROOT/transformer_500m_cuda.zip" -d /content/
 else
-  cp -r "$DRIVE_ROOT/transformer_100m_cuda/." "$WORK_DIR/"
+  cp -r "$DRIVE_ROOT/transformer_500m_cuda/." "$WORK_DIR/"
 fi
 
 # The corpus stays on Drive; symlink it so nothing is copied into the VM disk.
@@ -105,7 +105,7 @@ Colab gives one GPU, so there is no `--ddp`. A T4 and an A100 need different
 ```python
 import subprocess, os
 
-WORK_DIR = "/content/transformer_100m_cuda"
+WORK_DIR = "/content/transformer_500m_cuda"
 CKPT_DIR = "/content/drive/MyDrive/transformer/checkpoints"
 
 env = os.environ.copy()

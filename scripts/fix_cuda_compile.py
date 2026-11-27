@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fix CUDA compilation errors: lambda kernels + duplicate reshape"""
 import os
-os.chdir('/kaggle/working/transformer_100m_cuda')
+os.chdir('/kaggle/working/transformer_500m_cuda')
 
 # ============================================================
 # Fix 1: cuda_ops.cu - replace lambda kernels

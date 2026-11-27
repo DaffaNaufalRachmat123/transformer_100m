@@ -86,8 +86,8 @@ static void sync_arch() {
 
 // ─── CLI config ────────────────────────────────────────────────────────────
 static int g_stage                     = 2;
-static std::string g_sft_dir          = "sft_data/sft_clean";
-static std::string g_dpo_dir          = "sft_data/dpo";
+static std::string g_sft_dir          = "sft_data/sft_mixed_enja";
+static std::string g_dpo_dir          = "sft_data/dpo_ceiling_enja";
 static std::string g_phone_dir        = "sft_data/phone";
 static std::string g_checkpoint_dir   = "checkpoints";
 static std::string g_base_model       = "checkpoints/ckpt_pretrain_final.safetensors";
@@ -95,12 +95,12 @@ static std::string g_ref_model        = "";
 static std::string g_bpe_path         = "";
 static std::string g_vocab_dir        = "vocab_9";
 static int    g_max_steps             = -1;
-static int    g_max_seq               = 512;
+static int    g_max_seq               = 1024;
 static int    g_batch_size            = 4;
-static int    g_epochs                = 3;
-static float  g_lr                    = 3e-5f;
+static int    g_epochs                = 2;
+static float  g_lr                    = 2e-5f;
 static float  g_dpo_beta             = 0.1f;
-static float  g_dpo_max_margin       = 5.0f;
+static float  g_dpo_max_margin       = 4.0f;
 static int    g_log_every             = 10;
 static int    g_save_every            = 200;
 static int    g_warmup                = 100;
@@ -117,9 +117,9 @@ static volatile bool g_stop = false;
 void sig_handler(int) { g_stop = true; }
 
 // ─── RL (Stage 5) config ───────────────────────────────────────────────────
-static std::string g_rl_dir        = "rl_data";
+static std::string g_rl_dir        = "rl_data/ceiling_enja";
 static int    g_rl_n_samples       = 6;      // N completions sampled per prompt
-static int    g_rl_max_new         = 80;     // max new tokens per completion
+static int    g_rl_max_new         = 384;    // max new tokens per completion (covers p95 <|think|> + code/math)
 static float  g_rl_beta            = 0.1f;   // KL penalty coefficient
 static float  g_rl_temp            = 0.8f;   // sampling temperature
 static int    g_rl_top_k           = 50;     // top-k sampling
@@ -243,9 +243,23 @@ struct SFTSample {
 
 std::vector<SFTSample> load_sft_data(const std::string& dir, BPEEncoder& tok, int max_seq) {
     std::vector<SFTSample> samples;
+    std::vector<fs::path> jsonl_files;
     for (auto& entry : fs::directory_iterator(dir)) {
         if (entry.path().extension() != ".jsonl") continue;
-        std::ifstream f(entry.path());
+        std::string fname = entry.path().filename().string();
+        if (fname.find("eval") != std::string::npos ||
+            fname.find("test") != std::string::npos ||
+            fname.find("holdout") != std::string::npos) {
+            printf("[SFT] Skipping held-out split file: %s\n", fname.c_str());
+            continue;
+        }
+        jsonl_files.push_back(entry.path());
+    }
+    std::sort(jsonl_files.begin(), jsonl_files.end());
+
+    size_t skipped_long = 0, skipped_mask = 0;
+    for (const auto& fpath : jsonl_files) {
+        std::ifstream f(fpath);
         std::string line;
         while (std::getline(f, line)) {
             auto text_pos = line.find("\"text\":\"");
@@ -280,15 +294,29 @@ std::vector<SFTSample> load_sft_data(const std::string& dir, BPEEncoder& tok, in
             const bool has_end = text.size() >= 7 &&
                 text.compare(text.size() - 7, 7, SpecialTokens::END) == 0;
             auto ids = tok.encode(text, true, !has_end);
-            if ((int)ids.size() > max_seq) ids.resize(max_seq);
+            if ((int)ids.size() > max_seq) {
+                // Drop over-length rows instead of slicing off <|end|> mid-answer.
+                skipped_long++;
+                continue;
+            }
 
             SFTSample s;
             s.tokens = std::vector<int>(ids.begin(), ids.end());
             s.loss_mask = build_assistant_mask(s.tokens);
+            bool any_mask = false, any_end = false;
+            for (size_t k = 0; k < s.tokens.size(); k++) {
+                if (s.loss_mask[k] > 0.0f) any_mask = true;
+                if (s.tokens[k] == TOK_END) any_end = true;
+            }
+            if (!any_mask || !any_end) {
+                skipped_mask++;
+                continue;
+            }
             samples.push_back(std::move(s));
         }
     }
-    printf("[SFT] Loaded %zu samples from %s\n", samples.size(), dir.c_str());
+    printf("[SFT] Loaded %zu samples from %s (skipped %zu > max_seq=%d, %zu malformed/empty-mask)\n",
+           samples.size(), dir.c_str(), skipped_long, max_seq, skipped_mask);
     return samples;
 }
 
@@ -302,9 +330,25 @@ struct DPOSample {
 
 std::vector<DPOSample> load_dpo_data(const std::string& dir, BPEEncoder& tok, int max_seq) {
     std::vector<DPOSample> samples;
+    std::vector<fs::path> files;
     for (auto& entry : fs::directory_iterator(dir)) {
         if (entry.path().extension() != ".jsonl") continue;
-        std::ifstream f(entry.path());
+        std::string stem = entry.path().stem().string();
+        std::string lower = stem;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower.find("eval") != std::string::npos ||
+            lower.find("test") != std::string::npos ||
+            lower.find("holdout") != std::string::npos) {
+            printf("[DPO] Skipping evaluation/holdout file: %s\n", entry.path().filename().c_str());
+            continue;
+        }
+        files.push_back(entry.path());
+    }
+    std::sort(files.begin(), files.end());
+
+    size_t skipped_long = 0, skipped_mask = 0;
+    for (const auto& path : files) {
+        std::ifstream f(path);
         std::string line;
         while (std::getline(f, line)) {
             std::string system_txt = extract_json_string(line, "system");
@@ -318,59 +362,79 @@ std::vector<DPOSample> load_dpo_data(const std::string& dir, BPEEncoder& tok, in
             std::string chosen_full = prefix + chosen_txt + "<|end|>";
             std::string rejected_full = prefix + rejected_txt + "<|end|>";
 
-            // chosen_full / rejected_full already end with <|end|>.
             auto chosen_ids = tok.encode(chosen_full, true, false);
             auto rejected_ids = tok.encode(rejected_full, true, false);
-            if ((int)chosen_ids.size() > max_seq) chosen_ids.resize(max_seq);
-            if ((int)rejected_ids.size() > max_seq) rejected_ids.resize(max_seq);
-
-            auto build_mask = [&](const std::vector<TokenID>& ids) {
-                return build_assistant_mask(std::vector<int>(ids.begin(), ids.end()));
-            };
+            if ((int)chosen_ids.size() > max_seq || (int)rejected_ids.size() > max_seq) {
+                skipped_long++;
+                continue;
+            }
 
             DPOSample s;
             s.chosen_tokens = std::vector<int>(chosen_ids.begin(), chosen_ids.end());
             s.rejected_tokens = std::vector<int>(rejected_ids.begin(), rejected_ids.end());
-            s.chosen_mask = build_mask(chosen_ids);
-            s.rejected_mask = build_mask(rejected_ids);
+            s.chosen_mask = build_assistant_mask(s.chosen_tokens);
+            s.rejected_mask = build_assistant_mask(s.rejected_tokens);
+
+            bool ok_c = false, ok_r = false;
+            for (float m : s.chosen_mask) if (m > 0.0f) { ok_c = true; break; }
+            for (float m : s.rejected_mask) if (m > 0.0f) { ok_r = true; break; }
+            if (!ok_c || !ok_r) {
+                skipped_mask++;
+                continue;
+            }
             samples.push_back(std::move(s));
         }
     }
-    printf("[DPO] Loaded %zu preference pairs from %s\n", samples.size(), dir.c_str());
+    printf("[DPO] Loaded %zu preference pairs from %s (skipped %zu > max_seq=%d, %zu empty-mask)\n",
+           samples.size(), dir.c_str(), skipped_long, max_seq, skipped_mask);
     return samples;
 }
 
-// ─── RL Data Loading (JSONL, one verifiable coding task per line) ──────────
+// ─── RL Data Loading (JSONL, verifiable coding & math tasks) ───────────────
 struct RLSample {
     std::string lang;                 // "en" | "ja"
     std::string prompt_text;          // human-readable instruction
     std::vector<int> prompt_tokens;   // encoded <|system|>..<|user|>..<|assistant|> prefix
     std::string mock_input;           // stdin content for the verifier
-    std::string expected_output;      // expected stdout (stripped)
+    std::string expected_output;      // expected stdout / math anchor
+    std::string tests;                // MBPP/HumanEval assert block (optional)
+    std::string setup;                // optional preamble before code/tests
 };
 
 std::vector<RLSample> load_rl_data(const std::string& dir, BPEEncoder& tok, int max_seq) {
     std::vector<RLSample> samples;
+    std::vector<fs::path> files;
     for (auto& entry : fs::directory_iterator(dir)) {
         if (entry.path().extension() != ".jsonl") continue;
-        std::ifstream f(entry.path());
+        std::string lower = entry.path().stem().string();
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower.find("eval") != std::string::npos ||
+            lower.find("test") != std::string::npos ||
+            lower.find("holdout") != std::string::npos) continue;
+        files.push_back(entry.path());
+    }
+    std::sort(files.begin(), files.end());
+
+    for (const auto& path : files) {
+        std::ifstream f(path);
         std::string line;
         while (std::getline(f, line)) {
             std::string lang = extract_json_string(line, "lang");
             std::string prompt_txt = extract_json_string(line, "prompt");
             std::string mock_input = extract_json_string(line, "mock_input");
             std::string expected   = extract_json_string(line, "expected_output");
-            // Optional per-row system prompt (math rows use a math-tutor
-            // system; default stays the coding assistant).
+            std::string tests      = extract_json_string(line, "tests");
+            std::string setup      = extract_json_string(line, "setup");
             std::string system     = extract_json_string(line, "system");
-            if (prompt_txt.empty() || expected.empty()) continue;
+            if (prompt_txt.empty() || (expected.empty() && tests.empty())) continue;
 
             if (system.empty())
                 system = "You are a coding assistant.";
             std::string prefix = "<|system|>" + system + "<|user|>"
                                + prompt_txt + "<|assistant|>";
-            auto ids = tok.encode(prefix, true, true);
-            if ((int)ids.size() > max_seq) ids.resize(max_seq);
+            // add_bos=true, add_eos=false (never append <|end|> before generation!)
+            auto ids = tok.encode(prefix, true, false);
+            if ((int)ids.size() > max_seq - 16) continue;
 
             RLSample s;
             s.lang = lang;
@@ -378,6 +442,8 @@ std::vector<RLSample> load_rl_data(const std::string& dir, BPEEncoder& tok, int 
             s.prompt_tokens = std::vector<int>(ids.begin(), ids.end());
             s.mock_input = mock_input;
             s.expected_output = expected;
+            s.tests = tests;
+            s.setup = setup;
             samples.push_back(std::move(s));
         }
     }
@@ -703,7 +769,7 @@ int main(int argc, char** argv) {
         else if (arg == "--vocab_dir" && i+1 < argc) g_vocab_dir = argv[++i];
         else if (arg == "--bpe" && i+1 < argc)       g_bpe_path = argv[++i];
         else if (arg == "--max_steps" && i+1 < argc) g_max_steps = std::stoi(argv[++i]);
-        else if (arg == "--max_seq" && i+1 < argc)   g_max_seq = std::stoi(argv[++i]);
+        else if ((arg == "--max_seq" || arg == "--seq") && i+1 < argc) g_max_seq = std::stoi(argv[++i]);
         else if (arg == "--batch_size" && i+1 < argc) g_batch_size = std::stoi(argv[++i]);
         else if (arg == "--epochs" && i+1 < argc)    g_epochs = std::stoi(argv[++i]);
         else if (arg == "--lr" && i+1 < argc)        g_lr = std::stof(argv[++i]);
@@ -900,7 +966,7 @@ int main(int argc, char** argv) {
     // and EOS(4) → PAD(15) so SFT doesn't start from untrained embeddings.
     // NOTE: This is a temporary workaround until pretraining is re-run with
     // chat data mixed in via data/corpus_final/mixed/.
-    {
+    if (g_stage == 2 && !g_resume) {
         auto copy_embed_row = [&](int dst_id, int src_id, const char* dst_name, const char* src_name) {
             if (bad_tok(dst_id) || bad_tok(src_id)) {
                 fprintf(stderr,
@@ -934,9 +1000,12 @@ int main(int argc, char** argv) {
             !copy_embed_row(TOK_PAD, TOK_EOS, "PAD", "EOS")) {
             return 1;
         }
-         printf("[INIT] Copied BOS(%d) embedding → SYSTEM(%d) USER(%d) ASSISTANT(%d)\n",
-             TOK_BOS, TOK_SYSTEM, TOK_USER, TOK_ASSISTANT);
-         printf("[INIT] Copied EOS(%d) embedding → PAD(%d)\n", TOK_EOS, TOK_PAD);
+        printf("[INIT] Copied BOS(%d) embedding → SYSTEM(%d) USER(%d) ASSISTANT(%d)\n",
+            TOK_BOS, TOK_SYSTEM, TOK_USER, TOK_ASSISTANT);
+        printf("[INIT] Copied EOS(%d) embedding → PAD(%d)\n", TOK_EOS, TOK_PAD);
+    } else {
+        printf("[INIT] Preserving trained chat special-token embeddings from %s (stage=%d, resume=%d)\n",
+               g_base_model.c_str(), g_stage, (int)g_resume);
     }
 
     // RoPE tables
@@ -1235,7 +1304,13 @@ int main(int argc, char** argv) {
                 // This rank's slice of the global batch.
                 const size_t base = bi + (size_t)ddp_r * (size_t)g_batch_size;
 
-                int S = g_max_seq, B = g_batch_size;
+                // Dynamic per-batch S (computed over full global_bs so all DDP ranks match):
+                // eliminates ~80% pad waste while keeping gradients mathematically identical!
+                int max_b_len = 64;
+                for (size_t k = 0; k < global_bs; k++)
+                    max_b_len = std::max(max_b_len, (int)samples[bi + k].tokens.size() + 1);
+                int S = std::min(g_max_seq, ((max_b_len + 31) / 32) * 32);
+                int B = g_batch_size;
                 std::vector<int> batch_tokens(B * S, TOK_PAD);
                 std::vector<int> batch_targets(B * S, TOK_PAD);
                 std::vector<float> batch_mask(B * S, 0.0f);
@@ -1340,7 +1415,13 @@ int main(int argc, char** argv) {
             for (size_t bi = bi_start; bi + global_bs <= dpo_samples.size() && !g_stop;
                  bi += global_bs) {
                 if (g_max_steps > 0 && step >= g_max_steps) break;
-                int S = g_max_seq, B = g_batch_size;
+                int max_d_len = 64;
+                for (size_t k = 0; k < global_bs; k++) {
+                    max_d_len = std::max(max_d_len, (int)dpo_samples[bi + k].chosen_tokens.size() + 1);
+                    max_d_len = std::max(max_d_len, (int)dpo_samples[bi + k].rejected_tokens.size() + 1);
+                }
+                int S = std::min(g_max_seq, ((max_d_len + 31) / 32) * 32);
+                int B = g_batch_size;
 
                 // This rank's slice of the global batch.
                 const size_t base = bi + (size_t)ddp_r * (size_t)g_batch_size;
@@ -1382,25 +1463,58 @@ int main(int argc, char** argv) {
                 auto pol_lc = forward_logits(params, d_chosen_tok, B, S);
                 auto pol_lr = forward_logits(params, d_rejected_tok, B, S);
 
-                float lp_c  = cuda::masked_log_probs(pol_lc, d_chosen_tgt, d_chosen_mask).item_f32();
-                float lp_r  = cuda::masked_log_probs(pol_lr, d_rejected_tgt, d_rejected_mask).item_f32();
-                float rlp_c = cuda::masked_log_probs(ref_lc, d_chosen_tgt, d_chosen_mask).item_f32();
-                float rlp_r = cuda::masked_log_probs(ref_lr, d_rejected_tgt, d_rejected_mask).item_f32();
+                // Per-sample [B] DPO log-probs, margins, loss, and row-wise gradient weights
+                auto d_lp_c  = cuda::masked_log_probs_batch(pol_lc, d_chosen_tgt, d_chosen_mask, B, S);
+                auto d_lp_r  = cuda::masked_log_probs_batch(pol_lr, d_rejected_tgt, d_rejected_mask, B, S);
+                auto d_rlp_c = cuda::masked_log_probs_batch(ref_lc, d_chosen_tgt, d_chosen_mask, B, S);
+                auto d_rlp_r = cuda::masked_log_probs_batch(ref_lr, d_rejected_tgt, d_rejected_mask, B, S);
 
-                float raw_margin = (lp_c - rlp_c) - (lp_r - rlp_r);
-                float margin = fmaxf(fminf(raw_margin, g_dpo_max_margin), -g_dpo_max_margin);
-                float logit_val = g_dpo_beta * margin;
-                float dpo_loss  = logf(1.0f + expf(-logit_val));
-                running_loss   += dpo_loss;
-                running_margin += margin;
+                std::vector<float> h_lp_c(B), h_lp_r(B), h_rlp_c(B), h_rlp_r(B);
+                cudaMemcpy(h_lp_c.data(),  d_lp_c.data,  B * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaMemcpy(h_lp_r.data(),  d_lp_r.data,  B * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaMemcpy(h_rlp_c.data(), d_rlp_c.data, B * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaMemcpy(h_rlp_r.data(), d_rlp_r.data, B * sizeof(float), cudaMemcpyDeviceToHost);
+                cuda::sync_compute();
 
-                // sigma(-r) = 1/(1+exp(r)); numerically stable for large positive r
-                float sig_neg = (logit_val >= 0.0f)
-                    ? expf(-logit_val) / (1.0f + expf(-logit_val))
-                    : 1.0f / (1.0f + expf(logit_val));
-                // dL/d(logits_c[t]) = +beta*sigma(-r)/N * CE_grad[t] → chosen log-prob goes up
-                float coeff          =  g_dpo_beta * sig_neg;
-                float coeff_rejected = -g_dpo_beta * sig_neg;  // rejected log-prob goes down
+                int BS = B * S;
+                std::vector<float> scale_c(BS, 0.0f), scale_r(BS, 0.0f);
+                float batch_loss = 0.0f, batch_margin = 0.0f;
+
+                for (int b = 0; b < B; b++) {
+                    float raw_m = (h_lp_c[b] - h_rlp_c[b]) - (h_lp_r[b] - h_rlp_r[b]);
+                    float clamped_m = fmaxf(fminf(raw_m, g_dpo_max_margin), -g_dpo_max_margin);
+                    float logit_val = g_dpo_beta * clamped_m;
+                    float loss_b = (logit_val >= 0.0f)
+                        ? logf(1.0f + expf(-logit_val))
+                        : (-logit_val + logf(1.0f + expf(logit_val)));
+                    batch_loss   += loss_b / (float)B;
+                    batch_margin += clamped_m / (float)B;
+
+                    // True clipped-DPO derivative: stop pushing already-won pairs past +g_dpo_max_margin
+                    float sig_neg = 0.0f;
+                    if (raw_m < g_dpo_max_margin) {
+                        sig_neg = (logit_val >= 0.0f)
+                            ? expf(-logit_val) / (1.0f + expf(-logit_val))
+                            : 1.0f / (1.0f + expf(logit_val));
+                    }
+
+                    int tok_c_b = 0, tok_r_b = 0;
+                    for (int t = 0; t < S; t++) {
+                        if (chosen_mask[b * S + t] > 0.0f) tok_c_b++;
+                        if (rejected_mask[b * S + t] > 0.0f) tok_r_b++;
+                    }
+                    float wc = (tok_c_b > 0) ? ((+g_dpo_beta * sig_neg) / ((float)B * (float)tok_c_b)) : 0.0f;
+                    float wr = (tok_r_b > 0) ? ((-g_dpo_beta * sig_neg) / ((float)B * (float)tok_r_b)) : 0.0f;
+                    for (int t = 0; t < S; t++) {
+                        if (chosen_mask[b * S + t] > 0.0f)   scale_c[b * S + t] = wc;
+                        if (rejected_mask[b * S + t] > 0.0f) scale_r[b * S + t] = wr;
+                    }
+                }
+                running_loss   += batch_loss;
+                running_margin += batch_margin;
+
+                auto d_scale_c = cuda::CudaTensor::from_host(scale_c.data(), {BS});
+                auto d_scale_r = cuda::CudaTensor::from_host(scale_r.data(), {BS});
 
                 // ── Backward through the CHOSEN branch (increase chosen log-prob) ──
                 st.dims.B = B; st.dims.S = S;
@@ -1409,7 +1523,6 @@ int main(int argc, char** argv) {
                                                          rope_cos, rope_sin, cache_c);
                 auto logits_c = cuda::matmul_transb(x_final_c, params[0]);
 
-                int BS = B * S;
                 cuda::CudaTensor per_token_loss({(int64_t)BS}, cuda::DType::F32);
                 cuda::CudaTensor d_logits_c({(int64_t)BS, (int64_t)MODEL_VOCAB}, cuda::DType::FP16);
                 launch_ce_fwd_bwd((const __half*)logits_c.data, (const int*)d_chosen_tgt.data,
@@ -1417,12 +1530,9 @@ int main(int argc, char** argv) {
                                   (float*)per_token_loss.data, (__half*)d_logits_c.data,
                                   BS, MODEL_VOCAB, cuda::ctx.compute_stream);
 
+                launch_scale_rows_fp16((__half*)d_logits_c.data, (const float*)d_scale_c.data,
+                                       BS, MODEL_VOCAB, cuda::ctx.compute_stream);
                 cuda::sync_compute();
-                int tok_count_c = 0;
-                for (int i = 0; i < BS; i++) if (chosen_mask[i] > 0.0f) tok_count_c++;
-                float norm_c = (tok_count_c > 0) ? (coeff / tok_count_c) : 0.0f;
-                launch_scale_fp16((__half*)d_logits_c.data, norm_c,
-                                  d_logits_c.numel(), cuda::ctx.compute_stream);
 
                 auto dx_final_c = cuda::matmul(d_logits_c, params[0]);
                 auto d_embed_c = cuda::matmul(d_logits_c, x_final_c, true, false);
@@ -1451,12 +1561,9 @@ int main(int argc, char** argv) {
                                           BS, MODEL_VOCAB, cuda::ctx.compute_stream);
                     }
 
+                    launch_scale_rows_fp16((__half*)d_logits_r.data, (const float*)d_scale_r.data,
+                                           BS, MODEL_VOCAB, cuda::ctx.compute_stream);
                     cuda::sync_compute();
-                    int tok_count_r = 0;
-                    for (int i = 0; i < BS; i++) if (rejected_mask[i] > 0.0f) tok_count_r++;
-                    float norm_r = (tok_count_r > 0) ? (coeff_rejected / tok_count_r) : 0.0f;
-                    launch_scale_fp16((__half*)d_logits_r.data, norm_r,
-                                      d_logits_r.numel(), cuda::ctx.compute_stream);
 
                     auto dx_final_r = cuda::matmul(d_logits_r, params[0]);
                     auto d_embed_r = cuda::matmul(d_logits_r, x_final_r, true, false);
@@ -1647,8 +1754,10 @@ int main(int argc, char** argv) {
                         int gidx = plen[g] + t;
                         if (gidx < Lmax) tok_buf[(size_t)g * Lmax + gidx] = next_tok[g];
                         gen_len[g]++;
-                        if (next_tok[g] == TOK_EOS) alive[g] = 0;
-                        else any_alive = true;
+                        if (next_tok[g] == TOK_EOS || next_tok[g] == TOK_END || next_tok[g] == TOK_BOS)
+                            alive[g] = 0;
+                        else
+                            any_alive = true;
                     }
                     if (!any_alive) break;
                 }
@@ -1667,7 +1776,7 @@ int main(int argc, char** argv) {
                     auto esc = [](const std::string& x) {
                         std::string o;
                         for (char c : x) {
-                            if (c == '"' || c == '\\') o += '\\';
+                            if (c == '"' || c == '\\') { o += '\\'; o += c; }
                             else if (c == '\n') o += "\\n";
                             else if (c == '\r') o += "\\r";
                             else if (c == '\t') o += "\\t";
@@ -1678,17 +1787,23 @@ int main(int argc, char** argv) {
                     for (int g = 0; g < G; g++) {
                         int p = g / N;
                         auto& s = rl_samples[base + p];
-                        std::vector<TokenID> comp(seq_tokens[g].begin() + plen[g],
-                                                  seq_tokens[g].end());
-                        std::string code = tok.decode(comp, true);
-                        // pass lang through as-is (en/ja/id) — the verifier
-                        // only logs it, but coercion hid Indonesian rows
+                        std::vector<TokenID> comp;
+                        for (size_t k = (size_t)plen[g]; k < seq_tokens[g].size(); k++) {
+                            int tid = seq_tokens[g][k];
+                            if (tid == TOK_EOS || tid == TOK_END || tid == TOK_BOS || tid == TOK_PAD)
+                                break;
+                            comp.push_back((TokenID)tid);
+                        }
+                        // Preserve <|think|>...<|/think|> so rl_verifier.py strip_think() cleanly removes CoT!
+                        std::string code = tok.decode(comp, false);
                         std::string lang_out = s.lang.empty() ? "en" : s.lang;
                         rf << "{\"id\":" << g
                            << ",\"lang\":\"" << lang_out << "\""
                            << ",\"code\":\"" << esc(code) << "\""
                            << ",\"input\":\"" << esc(s.mock_input) << "\""
-                           << ",\"expected\":\"" << esc(s.expected_output) << "\"}\n";
+                           << ",\"expected\":\"" << esc(s.expected_output) << "\""
+                           << ",\"tests\":\"" << esc(s.tests) << "\""
+                           << ",\"setup\":\"" << esc(s.setup) << "\"}\n";
                     }
                     rf.close();
                 }
@@ -1857,6 +1972,8 @@ int main(int argc, char** argv) {
                 }
                 if (step % g_save_every == 0)
                     save_stage_checkpoint("_rl", step, epoch, bi + global_bs);
+                if (g_upload_every > 0 && step % g_upload_every == 0)
+                    trigger_upload(step, "rl");
             }
         }
         save_stage_checkpoint("_rl_final", step, g_epochs, 0);

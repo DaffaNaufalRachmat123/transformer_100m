@@ -8,12 +8,12 @@ Kaggle update script — overwrites source files with fixes:
 
 Usage (Kaggle notebook cell):
     import os
-    os.environ["TARGET_DIR"] = "/kaggle/working/transformer_100m_cuda"
+    os.environ["TARGET_DIR"] = "/kaggle/working/transformer_500m_cuda"
     %run kaggle_update_sources.py
 """
 import os, base64
 
-TARGET_DIR = os.environ.get("TARGET_DIR", "/kaggle/working/transformer_100m_cuda")
+TARGET_DIR = os.environ.get("TARGET_DIR", "/kaggle/working/transformer_500m_cuda")
 FILES = {
     "transformer/train_cuda.cu": (
         "Ly8gPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KLy8gdHJhaW5f"

@@ -17,7 +17,7 @@ See `GOOGLE_COLLAB_FULL_TRAINING.md` cells 1–5.
 ```python
 import subprocess, os
 
-WORK_DIR = "/content/transformer_100m_cuda"
+WORK_DIR = "/content/transformer_500m_cuda"
 env = os.environ.copy()
 env.pop('CUDA_VISIBLE_DEVICES', None)
 
@@ -63,7 +63,7 @@ if proc_audit.returncode != 0:
 ```python
 import subprocess, os
 
-WORK_DIR = "/content/transformer_100m_cuda"
+WORK_DIR = "/content/transformer_500m_cuda"
 env = os.environ.copy()
 env.pop('CUDA_VISIBLE_DEVICES', None)
 
@@ -116,7 +116,7 @@ print(f"\n[EXIT CODE: {proc.returncode}]")
 
 ```python
 %%bash
-cd /content/transformer_100m_cuda
+cd /content/transformer_500m_cuda
 
 echo "=== Facts Eval (20 samples, quick look) ==="
 python3 scripts/eval_facts.py \
@@ -138,7 +138,7 @@ python3 scripts/eval_facts.py \
 
 ```python
 %%bash
-cd /content/transformer_100m_cuda
+cd /content/transformer_500m_cuda
 
 mkdir -p checkpoints translation_resources translation_resources/facts
 

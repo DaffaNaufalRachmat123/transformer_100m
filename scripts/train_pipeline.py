@@ -26,6 +26,19 @@ import time
 from pathlib import Path
 
 
+def detect_min_vram_mib():
+    """Return smallest GPU total VRAM in MiB via nvidia-smi, or 0 if unavailable."""
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            stderr=subprocess.DEVNULL, text=True, timeout=5,
+        )
+        vals = [int(x.strip()) for x in out.strip().splitlines() if x.strip().isdigit()]
+        return min(vals) if vals else 0
+    except Exception:
+        return 0
+
+
 def detect_environment():
     if os.path.exists("/kaggle/working"):
         return "kaggle"
@@ -36,9 +49,9 @@ def detect_environment():
 
 def find_work_dir(env):
     if env == "kaggle":
-        return "/kaggle/working/transformer_100m_cuda"
+        return "/kaggle/working/transformer_500m_cuda"
     elif env == "colab":
-        return "/content/transformer_100m_cuda"
+        return "/content/transformer_500m_cuda"
     return str(Path(__file__).resolve().parent.parent)
 
 
@@ -253,8 +266,8 @@ def main():
     # ─── Pipeline control ───────────────────────────────────────────────
     parser.add_argument("--auto_continue", action="store_true",
                         help="Run all stages in sequence automatically")
-    parser.add_argument("--stages", default="pretrain,sft,dpo",
-                        help="Comma-separated stages to run [pretrain,sft,dpo]")
+    parser.add_argument("--stages", default="pretrain,sft",
+                        help="Comma-separated stages to run [pretrain,sft] (dpo disabled by default)")
     parser.add_argument("--skip_done", action="store_true", default=True,
                         help="Skip stages that have *_final.safetensors (default: True)")
     parser.add_argument("--no_skip_done", action="store_true",
@@ -276,27 +289,27 @@ def main():
 
     # ─── Pretrain flags ─────────────────────────────────────────────────
     parser.add_argument("--data_dir", default="data/corpus_pretrain_v8")
-    parser.add_argument("--batch_size", type=int, default=24)
-    parser.add_argument("--seq", type=int, default=256)
-    parser.add_argument("--max_tokens", type=int, default=2_000_000_000)
-    parser.add_argument("--lr", type=float, default=1.4e-4)
-    parser.add_argument("--grad_clip", type=float, default=5.0)
+    parser.add_argument("--batch_size", type=int, default=7)
+    parser.add_argument("--seq", "--max_seq", dest="seq", type=int, default=512,
+                        help="Pretrain sequence length (--seq or --max_seq) [512]")
+    parser.add_argument("--max_tokens", type=int, default=10_000_000_000)
+    parser.add_argument("--lr", type=float, default=1.0e-4)
+    parser.add_argument("--grad_clip", type=float, default=0.5)
     parser.add_argument("--loss_scale", type=float, default=4096)
     parser.add_argument("--safety", default="light")
-    parser.add_argument("--save_every", type=int, default=150)
+    parser.add_argument("--save_every", type=int, default=200)
     parser.add_argument("--eval_every_tokens", type=int, default=200_000_000)
     parser.add_argument("--eval_infer_bin", default="./build_infer/infer")
-    parser.add_argument("--arch_config", default="",
-                        help="architecture JSON (e.g. config_492m.json); "
-                             "empty keeps the trainer's built-in default")
+    parser.add_argument("--arch_config", default="config_500m.json",
+                        help="architecture JSON [config_500m.json]")
 
     # ─── SFT flags ──────────────────────────────────────────────────────
-    parser.add_argument("--sft_dir", default="sft_data/sft_translation_focused")
-    parser.add_argument("--sft_lr", type=float, default=3e-5)
-    parser.add_argument("--sft_epochs", type=int, default=1)
+    parser.add_argument("--sft_dir", default="sft_data/sft_mixed_enja")
+    parser.add_argument("--sft_lr", type=float, default=2e-5)
+    parser.add_argument("--sft_epochs", type=int, default=2)
     parser.add_argument("--sft_batch_size", type=int, default=8)
-    parser.add_argument("--sft_max_seq", type=int, default=512)
-    parser.add_argument("--sft_warmup", type=int, default=100)
+    parser.add_argument("--sft_max_seq", type=int, default=1024)
+    parser.add_argument("--sft_warmup", type=int, default=200)
     parser.add_argument("--sft_grad_clip", type=float, default=1.0)
     parser.add_argument("--sft_save_every", type=int, default=200)
     parser.add_argument("--sft_upload_every", type=int, default=0,
@@ -306,15 +319,15 @@ def main():
                         help="Override base model for SFT (default: auto from pretrain)")
 
     # ─── DPO flags ──────────────────────────────────────────────────────
-    parser.add_argument("--dpo_dir", default="sft_data/dpo")
-    parser.add_argument("--dpo_lr", type=float, default=1e-5)
+    parser.add_argument("--dpo_dir", default="sft_data/dpo_ceiling_enja")
+    parser.add_argument("--dpo_lr", type=float, default=5e-6)
     parser.add_argument("--dpo_beta", type=float, default=0.1)
-    parser.add_argument("--dpo_epochs", type=int, default=3)
+    parser.add_argument("--dpo_epochs", type=int, default=1)
     parser.add_argument("--dpo_batch_size", type=int, default=4)
-    parser.add_argument("--dpo_max_seq", type=int, default=512)
+    parser.add_argument("--dpo_max_seq", type=int, default=1024)
     parser.add_argument("--dpo_warmup", type=int, default=50)
     parser.add_argument("--dpo_grad_clip", type=float, default=1.0)
-    parser.add_argument("--dpo_max_margin", type=float, default=5.0,
+    parser.add_argument("--dpo_max_margin", type=float, default=4.0,
                         help="Clamp raw margin to [-M, M] to prevent over-optimization")
     parser.add_argument("--dpo_save_every", type=int, default=200)
     parser.add_argument("--dpo_upload_every", type=int, default=0,
@@ -323,7 +336,7 @@ def main():
     parser.add_argument("--dpo_base_model", default="",
                         help="Override base model for DPO (default: auto from SFT)")
     parser.add_argument("--dpo_ref_model", default="",
-                        help="Override reference model for DPO (default: pretrain final)")
+                        help="Override reference model for DPO (default: SFT base_model)")
 
     args = parser.parse_args()
 
@@ -342,7 +355,8 @@ def main():
         args.checkpoint_dir = os.path.join(work_dir, args.checkpoint_dir)
     os.makedirs(args.checkpoint_dir, exist_ok=True)
 
-    # Kaggle-specific: adjust defaults
+    # Kaggle-specific & <=16 GB VRAM safety guard (e.g. Tesla T4 14.6 GB)
+    vram_mib = detect_min_vram_mib()
     if env == "kaggle":
         if args.checkpoint_dir == os.path.join(work_dir, "checkpoints"):
             args.checkpoint_dir = "/kaggle/working/checkpoints"
@@ -350,8 +364,20 @@ def main():
         if not args.ddp:
             args.ddp = True
             args.num_gpus = 2
-        if args.batch_size == 24:
-            args.batch_size = 35
+    if (0 < vram_mib < 18000) or env == "kaggle":
+        # 491.6M model static VRAM: Pretrain ~7.9 GB, SFT ~8.1 GB, DPO ~10.3 GB.
+        # Full activation cache across 24 layers is ~1.41 MB/token, so cap batch
+        # sizes on 15-16 GB GPUs (Tesla T4) to prevent OOM at S=512 / S=1024.
+        if vram_mib == 0 or vram_mib < 18000:
+            if args.batch_size > 7 and args.seq >= 512:
+                print(f"[VRAM-GUARD] Clamping --batch_size {args.batch_size} -> 7 for <=16 GB GPU @ seq={args.seq}")
+                args.batch_size = 7
+            if args.sft_batch_size > 4 and args.sft_max_seq >= 1024:
+                print(f"[VRAM-GUARD] Clamping --sft_batch_size {args.sft_batch_size} -> 4 for <=16 GB GPU @ max_seq={args.sft_max_seq}")
+                args.sft_batch_size = 4
+            if args.dpo_batch_size > 2 and args.dpo_max_seq >= 1024:
+                print(f"[VRAM-GUARD] Clamping --dpo_batch_size {args.dpo_batch_size} -> 2 for <=16 GB GPU @ max_seq={args.dpo_max_seq}")
+                args.dpo_batch_size = 2
 
     env_vars = {}
     if env == "kaggle":

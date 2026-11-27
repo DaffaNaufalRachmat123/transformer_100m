@@ -1,0 +1,20 @@
+{
+  "rows": 12498,
+  "by_kind": {
+    "math_anchor": 7600,
+    "assert": 3998,
+    "code_stdin": 900
+  },
+  "by_origin": {
+    "gsm8k_real_enja": 7600,
+    "mbpp_real_enja": 840,
+    "phi1_exec_verified_enja": 3160,
+    "code_stdin_template": 900
+  },
+  "real_or_textbook_pct": 92.8,
+  "static_template_pct": 7.2,
+  "by_lang": {
+    "en": 6804,
+    "ja": 5694
+  }
+}

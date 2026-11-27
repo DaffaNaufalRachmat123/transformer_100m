@@ -10,8 +10,8 @@
 # ─── 1. Copy project from input (read-only) to working (read-write) ────────
 # NOTE: Only copy code + sft/dpo data. Pretrain corpus stays in /kaggle/input (read-only is fine for streaming)
 echo "[1/4] Copying project to /kaggle/working..."
-INPUT_DIR="/kaggle/input/transformercuda100m/transformer_100m_cuda"
-WORK_DIR="/kaggle/working/transformer_100m_cuda"
+INPUT_DIR="/kaggle/input/transformercuda100m/transformer_500m_cuda"
+WORK_DIR="/kaggle/working/transformer_500m_cuda"
 
 mkdir -p "$WORK_DIR"
 # Copy everything EXCEPT the large corpus data

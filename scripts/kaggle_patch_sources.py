@@ -5,7 +5,7 @@ Copy-paste this entire cell into a Kaggle notebook.
 """
 import os
 
-BASE = os.environ.get("TARGET_DIR", "/kaggle/working/transformer_100m_cuda")
+BASE = os.environ.get("TARGET_DIR", "/kaggle/working/transformer_500m_cuda")
 
 # ========================================================================
 # PATCH 1/3: transformer/train_cuda.cu

@@ -459,7 +459,7 @@ def s5():
     rs2_ = 1 / math.sqrt(ms2 + 1e-6)
     n2 = c["n2"][pos]
     s57 = (
-        human("RMSNorm kedua, sebelum masuk jaringan makanan (FFN).")
+        human("RMSNorm kedua, sebelum masuk jaringan feed-forward (FFN).")
         + table(["", "d0", "d1", "d2", "d3"],
                 [["x_mid&sup2;"] + [f"{v:.6f}" for v in sq2], ["n2 = x_mid&middot;rsqrt"] + [f"{v:.5f}" for v in n2]], cls="cmp")
         + f"<p>&Sigma; = {sq2.sum():.6f}; mean = {ms2:.6f}; rsqrt = 1/&radic;({ms2:.6f}+10<sup>&minus;6</sup>) = <b>{rs2_:.5f}</b>.</p>"

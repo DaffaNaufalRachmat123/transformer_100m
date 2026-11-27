@@ -14,12 +14,12 @@ import os
 
 DRIVE_ROOT = "/content/drive/MyDrive"
 
-ZIP_PATH   = f"{DRIVE_ROOT}/transformer_100m_cuda.zip"
+ZIP_PATH   = f"{DRIVE_ROOT}/transformer_500m_cuda.zip"
 DATA_PATH  = f"{DRIVE_ROOT}/data"
 SFT_PATH   = f"{DRIVE_ROOT}/sft_data"
 DPO_PATH   = f"{DRIVE_ROOT}/sft_data/dpo"
 
-WORK_DIR   = "/content/transformer_100m_cuda"
+WORK_DIR   = "/content/transformer_500m_cuda"
 CKPT_DRIVE        = f"{DRIVE_ROOT}/checkpoints_100m"
 CKPT_FACTS_DRIVE  = f"{DRIVE_ROOT}/checkpoints_facts_100m"
 CKPT_TRANSL_DRIVE = f"{DRIVE_ROOT}/checkpoints_transl_100m"
@@ -108,7 +108,7 @@ make_symlink(TRANSL_RES_DRIVE, f"{WORK_DIR}/translation_resources")
 ```python
 %%bash
 set -e
-WORK_DIR="/content/transformer_100m_cuda"
+WORK_DIR="/content/transformer_500m_cuda"
 cd "$WORK_DIR"
 
 if ! command -v g++ &> /dev/null; then
@@ -168,7 +168,7 @@ echo "=== ALL BUILDS OK + KERNELS VERIFIED ==="
 ```python
 import subprocess, os
 
-WORK_DIR = "/content/transformer_100m_cuda"
+WORK_DIR = "/content/transformer_500m_cuda"
 env = os.environ.copy()
 env.pop('CUDA_VISIBLE_DEVICES', None)
 env['NCCL_P2P_DISABLE'] = '1'
@@ -222,7 +222,7 @@ print(f"\n[EXIT CODE: {proc.returncode}]")
 ```python
 import subprocess, os
 
-WORK_DIR = "/content/transformer_100m_cuda"
+WORK_DIR = "/content/transformer_500m_cuda"
 env = os.environ.copy()
 env.pop('CUDA_VISIBLE_DEVICES', None)
 
@@ -293,7 +293,7 @@ print(f"\n[EXIT CODE: {proc.returncode}]")
 ```python
 import subprocess, os
 
-WORK_DIR = "/content/transformer_100m_cuda"
+WORK_DIR = "/content/transformer_500m_cuda"
 env = os.environ.copy()
 env.pop('CUDA_VISIBLE_DEVICES', None)
 
@@ -347,7 +347,7 @@ print(f"\n[EXIT CODE: {proc.returncode}]")
 
 ```python
 %%bash
-cd /content/transformer_100m_cuda
+cd /content/transformer_500m_cuda
 
 echo "=== Facts Eval (20 samples) ==="
 python3 scripts/eval_facts.py \
@@ -376,7 +376,7 @@ python3 scripts/eval_translation.py \
 
 ```python
 %%bash
-cd /content/transformer_100m_cuda
+cd /content/transformer_500m_cuda
 
 mkdir -p checkpoints translation_resources
 

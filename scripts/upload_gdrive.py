@@ -28,6 +28,7 @@ def find_token_file():
     """Find OAuth2 token file in common locations."""
     candidates = [
         TOKEN_FILENAME,
+        os.path.join('/kaggle/working/transformer_500m_cuda', TOKEN_FILENAME),
         os.path.join('/kaggle/working/transformer_100m_cuda', TOKEN_FILENAME),
         os.path.join('/kaggle/working', TOKEN_FILENAME),
         os.path.join(os.path.dirname(__file__), '..', TOKEN_FILENAME),
@@ -37,6 +38,7 @@ def find_token_file():
     if os.path.isdir(kaggle_input):
         for ds in os.listdir(kaggle_input):
             candidates.append(os.path.join(kaggle_input, ds, TOKEN_FILENAME))
+            candidates.append(os.path.join(kaggle_input, ds, 'transformer_500m_cuda', TOKEN_FILENAME))
             candidates.append(os.path.join(kaggle_input, ds, 'transformer_100m_cuda', TOKEN_FILENAME))
     for p in candidates:
         if os.path.isfile(p):

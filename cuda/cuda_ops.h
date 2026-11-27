@@ -55,9 +55,13 @@ void cross_entropy_backward(const CudaTensor& logits, const CudaTensor& targets,
                             const CudaTensor& mask, CudaTensor& d_logits);
 
 // ─── DPO utilities ─────────────────────────────────────────────────────────
-// Compute sum of masked log probabilities: sum(mask * log_softmax(logits)[targets])
+// Compute scalar mean of masked log probabilities across entire [B*S]
 CudaTensor masked_log_probs(const CudaTensor& logits, const CudaTensor& targets,
                             const CudaTensor& mask);
+
+// Compute per-sample [B] mean of masked log probabilities across each row S
+CudaTensor masked_log_probs_batch(const CudaTensor& logits, const CudaTensor& targets,
+                                  const CudaTensor& mask, int B, int S);
 
 // Scale all FP16 elements in-place by a scalar
 void scale_fp16(CudaTensor& t, float scale);

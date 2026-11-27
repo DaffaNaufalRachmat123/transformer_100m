@@ -8,7 +8,7 @@ Fixes 3 compile errors:
 """
 import re, os
 
-BASE = "/kaggle/working/transformer_100m_cuda"
+BASE = "/kaggle/working/transformer_500m_cuda"
 
 # ==========================================================================
 # FIX 1: cuda/cuda_kernels.cu — atomicAdd type mismatch

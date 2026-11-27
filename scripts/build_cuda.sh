@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# build_cuda.sh — Build transformer_100m_cuda for any CUDA GPU
+# build_cuda.sh — Build transformer_500m_cuda for any CUDA GPU
 #
 # Arch is auto-detected from nvidia-smi compute capability; override with:
 #   CUDA_ARCH=80 bash scripts/build_cuda.sh        (A100)
@@ -25,7 +25,7 @@ if [ -z "$ARCH" ]; then
     ARCH=80
 fi
 echo "═══════════════════════════════════════════════════════"
-echo " Building transformer_100m_cuda (sm_${ARCH})"
+echo " Building transformer_500m_cuda (sm_${ARCH})"
 echo "═══════════════════════════════════════════════════════"
 
 cd "$PROJECT_DIR"

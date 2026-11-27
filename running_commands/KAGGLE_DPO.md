@@ -5,17 +5,18 @@
 ```python
 %%bash
 SRC=/kaggle/input/datasets/naufalrachmat/transformerarchitecture17
-DST=/kaggle/working/transformer_100m_cuda
+DST=/kaggle/working/transformer_500m_cuda
 mkdir -p $DST
 cp -r $SRC/bpe         $DST/
 cp -r $SRC/cuda        $DST/
 cp -r $SRC/scripts     $DST/
 cp -r $SRC/tools       $DST/
 cp -r $SRC/transformer $DST/
-cp -r $SRC/vocab_8     $DST/
+cp -r $SRC/vocab_9     $DST/
 cp -r $SRC/infer_cpp   $DST/
-cp $SRC/gdrive_token.json $DST/
-cp $SRC/bpe_v8.bin     $DST/
+cp $SRC/gdrive_token.json $DST/ 2>/dev/null || true
+cp $SRC/bpe_v9.bin     $DST/
+cp $SRC/config_*.json  $DST/
 cp $SRC/CMakeLists.txt $DST/
 cp $SRC/config.ini     $DST/
 
@@ -41,7 +42,7 @@ ls -lh $DST/sft_data/
 
 ```python
 %%bash
-cd /kaggle/working/transformer_100m_cuda
+cd /kaggle/working/transformer_500m_cuda
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=75 -DUSE_DDP=ON 2>&1 | tail -15
 cmake --build . -j$(nproc) 2>&1 | tail -30
@@ -52,8 +53,8 @@ cmake --build . --target grad_check -j$(nproc) 2>&1 | tail -5
 
 ## Cell 3: Run DPO Only
 
-> Requires `ckpt_sft_final.safetensors` (or latest sft step checkpoint) in checkpoint_dir.
-> Uses `ckpt_pretrain_final.safetensors` as frozen reference model.
+> Requires `ckpt_sft_final.safetensors` (or latest `ckpt_sft_step*.safetensors`) in `checkpoint_dir`.
+> Automatically uses `ckpt_sft_final.safetensors` as both policy initialization and frozen reference model.
 
 ```python
 import subprocess, os
@@ -66,21 +67,23 @@ proc = subprocess.Popen(
     ['python3', 'scripts/train_pipeline.py',
      '--stages',            'dpo',
      '--checkpoint_dir',    '/kaggle/working/checkpoints',
-     '--vocab_dir',         'vocab_8',
-     '--bpe',               'bpe_v8.bin',
+     '--vocab_dir',         'vocab_9',
+     '--bpe',               'bpe_v9.bin',
+     '--arch_config',       'config_500m.json',
      '--log_every',         '5',
-     '--dpo_dir',           'sft_data/dpo',
-     '--dpo_lr',            '1e-5',
-     '--dpo_epochs',        '3',
+     '--dpo_dir',           'sft_data/dpo_ceiling_enja',
+     '--dpo_lr',            '5e-6',
+     '--dpo_epochs',        '1',
      '--dpo_beta',          '0.1',
-     '--dpo_batch_size',    '4',
-     '--dpo_max_seq',       '512',
+     '--dpo_max_margin',    '4.0',
+     '--dpo_batch_size',    '2',
+     '--dpo_max_seq',       '1024',
      '--dpo_warmup',        '50',
      '--dpo_save_every',    '200',
      '--dpo_upload_every',  '200',
      '--ddp', '--num_gpus', '2',
      '--resume'],
-    cwd='/kaggle/working/transformer_100m_cuda',
+    cwd='/kaggle/working/transformer_500m_cuda',
     env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     encoding='utf-8', errors='replace', bufsize=1,
 )

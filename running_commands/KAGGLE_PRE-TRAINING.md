@@ -50,17 +50,17 @@ fetch more data instead of raising the epoch count.
 ```python
 %%bash
 SRC=/kaggle/input/datasets/naufalrachmat/transformerarchitecture17
-DST=/kaggle/working/transformer_100m_cuda
+DST=/kaggle/working/transformer_500m_cuda
 mkdir -p $DST
 cp -r $SRC/bpe         $DST/
 cp -r $SRC/cuda        $DST/
 cp -r $SRC/scripts     $DST/
 cp -r $SRC/tools       $DST/
 cp -r $SRC/transformer $DST/
-cp -r $SRC/vocab_8     $DST/
+cp -r $SRC/vocab_9     $DST/
 cp -r $SRC/infer_cpp   $DST/
-cp $SRC/gdrive_token.json $DST/
-cp $SRC/bpe_v8.bin     $DST/
+cp $SRC/gdrive_token.json $DST/ 2>/dev/null || true
+cp $SRC/bpe_v9.bin     $DST/
 cp $SRC/CMakeLists.txt $DST/
 cp $SRC/config.ini     $DST/
 cp $SRC/config_*.json  $DST/ 2>/dev/null || true
@@ -77,7 +77,7 @@ echo "--- checkpoints ---"; ls -lh /kaggle/working/checkpoints/
 
 ```python
 %%bash
-cd /kaggle/working/transformer_100m_cuda
+cd /kaggle/working/transformer_500m_cuda
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=75 -DUSE_DDP=ON 2>&1 | tail -15
 cmake --build . -j$(nproc) 2>&1 | tail -30
@@ -95,12 +95,12 @@ cmake --build . --target grad_check -j$(nproc) 2>&1 | tail -5
 ```python
 import subprocess, shutil, os
 
-infer_build = '/kaggle/working/transformer_100m_cuda/build_infer'
+infer_build = '/kaggle/working/transformer_500m_cuda/build_infer'
 shutil.rmtree(infer_build, ignore_errors=True)
 os.makedirs(infer_build, exist_ok=True)
 
 subprocess.run(
-    ['cmake', '/kaggle/working/transformer_100m_cuda/infer_cpp',
+    ['cmake', '/kaggle/working/transformer_500m_cuda/infer_cpp',
      '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CUDA_ARCHITECTURES=75'],
     cwd=infer_build, check=True)
 subprocess.run(['make', f'-j{os.cpu_count()}'], cwd=infer_build, check=True)
@@ -111,12 +111,12 @@ print("infer binary built")
 
 ```python
 %%bash
-cd /kaggle/working/transformer_100m_cuda
-DATA=/kaggle/input/datasets/naufalrachmat/datatraining/data/corpus_pretrain_v8
+cd /kaggle/working/transformer_500m_cuda
+DATA=/kaggle/input/datasets/naufalrachmat/corpus-pretrain-updated-1/corpus_pretrain_v8
 
 python3 scripts/preflight_pretrain.py \
-  --vocab_dir vocab_8 \
-  --bpe bpe_v8.bin \
+  --vocab_dir vocab_9 \
+  --bpe bpe_v9.bin \
   --data_dir "$DATA" \
   --max_seq 512
 ```
@@ -157,14 +157,15 @@ proc = subprocess.Popen(
     ['python3', 'scripts/train_pipeline.py',
      '--stages',            'pretrain',
      '--checkpoint_dir',    '/kaggle/working/checkpoints',
-     '--data_dir',          '/kaggle/input/datasets/naufalrachmat/datatraining/data/corpus_pretrain_v8',
-     '--vocab_dir',         'vocab_8',
-     '--bpe',               'bpe_v8.bin',
-     '--batch_size',        '16',
-     '--max_seq',           '512',
+     '--data_dir',          '/kaggle/input/datasets/naufalrachmat/corpus-pretrain-updated-1/corpus_pretrain_v8',
+     '--vocab_dir',         'vocab_9',
+     '--bpe',               'bpe_v9.bin',
+     '--arch_config',       'config_500m.json',
+     '--batch_size',        '7',
+     '--seq',               '512',
      '--max_tokens',        '10000000000',
-     '--lr',                '1.4e-4',
-     '--grad_clip',         '5.0',
+     '--lr',                '1.0e-4',
+     '--grad_clip',         '0.5',
      '--loss_scale',        '4096',
      '--safety',            'light',
      '--save_every',        '200',
@@ -174,7 +175,7 @@ proc = subprocess.Popen(
      '--eval_infer_bin',    './build_infer/infer',
      '--ddp', '--num_gpus', '2',
      '--resume'],
-    cwd='/kaggle/working/transformer_100m_cuda',
+    cwd='/kaggle/working/transformer_500m_cuda',
     env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     encoding='utf-8', errors='replace', bufsize=1,
 )

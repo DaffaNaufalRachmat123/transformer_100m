@@ -5,17 +5,19 @@
 ```python
 %%bash
 SRC=/kaggle/input/datasets/naufalrachmat/transformerarchitecture17
-DST=/kaggle/working/transformer_100m_cuda
+DST=/kaggle/working/transformer_500m_cuda
 mkdir -p $DST
 cp -r $SRC/bpe         $DST/
 cp -r $SRC/cuda        $DST/
 cp -r $SRC/scripts     $DST/
 cp -r $SRC/tools       $DST/
 cp -r $SRC/transformer $DST/
-cp -r $SRC/vocab_8     $DST/
+cp -r $SRC/vocab_9     $DST/
 cp -r $SRC/infer_cpp   $DST/
-cp $SRC/gdrive_token.json $DST/
-cp $SRC/bpe_v8.bin     $DST/
+cp -r $SRC/rl_data     $DST/ 2>/dev/null || true
+cp $SRC/gdrive_token.json $DST/ 2>/dev/null || true
+cp $SRC/bpe_v9.bin     $DST/
+cp $SRC/config_*.json  $DST/
 cp $SRC/CMakeLists.txt $DST/
 cp $SRC/config.ini     $DST/
 
@@ -41,7 +43,7 @@ ls -lh $DST/sft_data/
 
 ```python
 %%bash
-cd /kaggle/working/transformer_100m_cuda
+cd /kaggle/working/transformer_500m_cuda
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=75 -DUSE_DDP=ON 2>&1 | tail -15
 cmake --build . -j$(nproc) 2>&1 | tail -30
@@ -66,31 +68,34 @@ proc = subprocess.Popen(
      '--auto_continue',
      '--stages',            'sft,dpo',
      '--checkpoint_dir',    '/kaggle/working/checkpoints',
-     '--vocab_dir',         'vocab_8',
-     '--bpe',               'bpe_v8.bin',
+     '--vocab_dir',         'vocab_9',
+     '--bpe',               'bpe_v9.bin',
+     '--arch_config',       'config_500m.json',
      '--log_every',         '5',
-     # SFT
-     '--sft_dir',           'sft_data/sft_translation_focused',
-     '--sft_lr',            '3e-5',
-     '--sft_epochs',        '1',
-     '--sft_batch_size',    '8',
-     '--sft_max_seq',       '512',
-     '--sft_warmup',        '100',
-     '--sft_save_every',    '200',
-     '--sft_upload_every',  '200',
-     # DPO
-     '--dpo_dir',           'sft_data/dpo',
-     '--dpo_lr',            '1e-5',
-     '--dpo_epochs',        '3',
+     # SFT v4 Ultra-Max (631.7K rows, max_seq=1024; Tesla T4 14.6 GB safe batch=4)
+     '--sft_dir',           'sft_data/sft_mixed_enja',
+     '--sft_lr',            '2e-5',
+     '--sft_epochs',        '2',
+     '--sft_batch_size',    '4',
+     '--sft_max_seq',       '1024',
+     '--sft_warmup',        '200',
+     '--sft_save_every',    '300',
+     '--sft_upload_every',  '600',
+     # DPO Ceiling (23K matched-length pairs, max_seq=1024; Tesla T4 14.6 GB safe batch=2)
+     '--dpo_dir',           'sft_data/dpo_ceiling_enja',
+     '--dpo_lr',            '5e-6',
+     '--dpo_epochs',        '1',
      '--dpo_beta',          '0.1',
-     '--dpo_batch_size',    '4',
-     '--dpo_max_seq',       '512',
+     '--dpo_max_margin',    '4.0',
+     '--dpo_batch_size',    '2',
+     '--dpo_max_seq',       '1024',
+     '--dpo_warmup',        '50',
      '--dpo_save_every',    '200',
      '--dpo_upload_every',  '200',
      # Infra
      '--ddp', '--num_gpus', '2',
      '--resume'],
-    cwd='/kaggle/working/transformer_100m_cuda',
+    cwd='/kaggle/working/transformer_500m_cuda',
     env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     encoding='utf-8', errors='replace', bufsize=1,
 )
@@ -98,4 +103,11 @@ for line in proc.stdout:
     print(line, end='', flush=True)
 proc.wait()
 print(f"\n[EXIT CODE: {proc.returncode}]")
+```
+
+## Cell 4: Stage 5 — Verifiable RL / GRPO-lite (Coding + Math EN/JA)
+
+```bash
+cd /kaggle/working/transformer_500m_cuda
+bash scripts/run_rl.sh --ddp
 ```

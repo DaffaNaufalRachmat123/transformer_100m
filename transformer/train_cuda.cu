@@ -605,22 +605,46 @@ void save_checkpoint(const std::string& dir,
     // leaves train_state.txt pointing at the previous consistent step rather
     // than at a step whose optimizer moments were never written.
     {
-        std::ofstream sf(state_path);
-        sf << "tokens_processed=" << tokens_done << "\n";
-        sf << "step=" << step << "\n";
-        sf << "phase=" << g_current_phase << "\n";
-        sf << "ema_loss=" << ema_loss_val << "\n";
-        sf << "ema_local_min=" << ema_local_min_val << "\n";
-        sf << "lr_decay_factor=" << lr_decay_val << "\n";
-        sf << "safety_mode=" << safety_mode_name(g_safety) << "\n";
-        sf << "lr=" << g_lr << "\n";
-        sf << "grad_clip=" << g_grad_clip << "\n";
-        sf << "gnorm_ema=" << gnorm_ema << "\n";
-        sf << "lr_adaptive_factor=" << lr_adaptive_factor << "\n";
+        // Susun dulu di memori, lalu commit atomik (tmp + rename): instance
+        // interruptible (Vast bid) dihentikan dengan SIGKILL — tulis langsung
+        // ke state_path bisa meninggalkan file kosong/terpotong kalau kill
+        // jatuh di tengah jendela tulis, dan resume akan rusak karena file inilah
+        // penanda komit. rename() POSIX atomik, sama seperti safetensors di atas.
+        std::ostringstream ss;
+        ss << "tokens_processed=" << tokens_done << "\n";
+        ss << "step=" << step << "\n";
+        ss << "phase=" << g_current_phase << "\n";
+        ss << "ema_loss=" << ema_loss_val << "\n";
+        ss << "ema_local_min=" << ema_local_min_val << "\n";
+        ss << "lr_decay_factor=" << lr_decay_val << "\n";
+        ss << "safety_mode=" << safety_mode_name(g_safety) << "\n";
+        ss << "lr=" << g_lr << "\n";
+        ss << "grad_clip=" << g_grad_clip << "\n";
+        ss << "gnorm_ema=" << gnorm_ema << "\n";
+        ss << "lr_adaptive_factor=" << lr_adaptive_factor << "\n";
         // The scaler adjusts this at runtime, so the CLI value is only a seed.
-        sf << "loss_scale=" << g_loss_scale << "\n";
-        sf << "tok_fingerprint=" << g_tok_fingerprint << "\n";
-        sf.close();
+        ss << "loss_scale=" << g_loss_scale << "\n";
+        ss << "tok_fingerprint=" << g_tok_fingerprint << "\n";
+
+        const std::string state_tmp = state_path + ".tmp";
+        bool committed = false;
+        {
+            std::ofstream sf(state_tmp, std::ios::binary | std::ios::trunc);
+            if (sf) {
+                sf << ss.str();
+                sf.flush();
+                sf.close();
+                std::error_code rec;
+                fs::rename(state_tmp, state_path, rec);
+                committed = !rec;
+            }
+        }
+        if (!committed) {
+            // Cadangan (perilaku lama): tulis langsung kalau tmp/rename gagal.
+            std::ofstream sf(state_path, std::ios::binary | std::ios::trunc);
+            sf << ss.str();
+            sf.close();
+        }
     }
 
     printf("[CKPT] Saved: %s (%.1f MB) | %s tokens\n",
@@ -735,7 +759,7 @@ int main(int argc, char** argv) {
         else if (arg == "--bpe" && i+1 < argc)        g_bpe_path = argv[++i];
         else if (arg == "--max_tokens" && i+1 < argc) g_max_tokens = std::stoull(argv[++i]);
         else if (arg == "--batch_size" && i+1 < argc) g_batch_size = std::stoi(argv[++i]);
-        else if (arg == "--seq" && i+1 < argc)    g_max_seq = std::stoi(argv[++i]);
+        else if ((arg == "--seq" || arg == "--max_seq") && i+1 < argc) g_max_seq = std::stoi(argv[++i]);
         else if (arg == "--lr" && i+1 < argc)         g_lr = std::stof(argv[++i]);
         else if (arg == "--grad_clip" && i+1 < argc) g_grad_clip = std::stof(argv[++i]);
         else if (arg == "--safety" && i+1 < argc) {

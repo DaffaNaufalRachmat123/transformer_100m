@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """prepare_sft_enja.py
 
-Build a clean EN<->JA translation + fact SFT dataset for transformer_100m_cuda.
+Build a clean EN<->JA translation + fact SFT dataset for transformer_500m_cuda.
 
 Sources (from sibling project transformer_mobile_claude):
   - sft_translation.jsonl  -> keep only en-ja / ja-en pairs

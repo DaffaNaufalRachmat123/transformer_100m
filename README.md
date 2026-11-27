@@ -67,7 +67,7 @@ python3 scripts/prepare_sft_coding.py --out_sft sft_data/sft_coding/train.jsonl 
 ## Project Structure
 
 ```
-transformer_100m_cuda/
+transformer_500m_cuda/
 ├── CMakeLists.txt           # Top-level build (CUDA + CXX)
 ├── cuda/                    # CUDA backend (tensor, kernels, ops, context)
 │   ├── cuda_tensor.h        # GPU tensor (replaces mx::array)

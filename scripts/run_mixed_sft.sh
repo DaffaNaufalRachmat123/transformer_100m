@@ -27,20 +27,20 @@
 set -e
 cd "$(dirname "$0")/.."
 
-BASE_MODEL="${BASE_MODEL:-translation_resources/facts/ckpt_sft_final.safetensors}"
-ARCH_CONFIG="${ARCH_CONFIG:-}"
+BASE_MODEL="${BASE_MODEL:-checkpoints/ckpt_pretrain_final.safetensors}"
+ARCH_CONFIG="${ARCH_CONFIG:-config_492m.json}"
 CKPT_DIR="${CKPT_DIR:-checkpoints_mixed}"
 MIX_DIR="${MIX_DIR:-sft_data/sft_mixed_enja}"
 MIX_TOTAL="${MIX_TOTAL:-400000}"
-MIX_RATIO="${MIX_RATIO:-facts=0.40,translation=0.40,coding=0.05,math=0.15}"
+MIX_RATIO="${MIX_RATIO:-translation=0.42,facts=0.21,math=0.20,coding=0.17}"
 STEPS="${STEPS:--1}"
 LR="${LR:-2e-5}"
 EPOCHS="${EPOCHS:-2}"
-BATCH="${BATCH:-16}"
-MAX_SEQ="${MAX_SEQ:-512}"
+BATCH="${BATCH:-8}"
+MAX_SEQ="${MAX_SEQ:-1024}"
 WARMUP="${WARMUP:-200}"
-VOCAB_DIR="${VOCAB_DIR:-vocab_6}"
-BPE="${BPE:-bpe_v6.bin}"
+VOCAB_DIR="${VOCAB_DIR:-vocab_9}"
+BPE="${BPE:-bpe_v9.bin}"
 
 # ── Dataset ────────────────────────────────────────────────────────────────
 if [ ! -f "$MIX_DIR/train.jsonl" ]; then

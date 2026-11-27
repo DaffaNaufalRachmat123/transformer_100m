@@ -20,7 +20,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -e
-cd /kaggle/working/transformer_100m_cuda
+cd /kaggle/working/transformer_500m_cuda
 
 # ── Sanity: ensure the translation-focused data exists ─────────────────────
 if [ ! -f "sft_data/sft_translation_focused/train.jsonl" ]; then
